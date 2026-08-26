@@ -114,11 +114,9 @@ class AssinadorPMI(ctk.CTk):
         self.sign_button.pack(side="right")
 
     def _add_logo(self, parent: ctk.CTkFrame) -> None:
-        candidates = (
-            BUNDLE_DIR / "assets" / "logo_pmi_branca_3.png",
-            Path("/home/eikemiranda/Downloads/logo_pmi_branca_3.png"),
-        )
-        logo_path = next((path for path in candidates if path.exists()), None)
+        logo_path = BUNDLE_DIR / "assets" / "logo_pmi_branca_3.png"
+        if not logo_path.exists():
+            logo_path = None
         if logo_path:
             try:
                 image = Image.open(logo_path)

@@ -6,6 +6,48 @@ arquivos PDF.
 > Importante: a aplicação insere uma assinatura **visual por imagem**. Isso não
 > equivale a uma assinatura digital criptográfica com certificado ICP-Brasil.
 
+## Executar no Linux
+
+O código da aplicação é multiplataforma. No Ubuntu ou Debian, instale primeiro
+o Python, o suporte ao Tkinter e a criação de ambientes virtuais:
+
+```bash
+sudo apt update
+sudo apt install python3 python3-venv python3-tk
+```
+
+Em seguida, dentro desta pasta:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python app.py
+```
+
+No Fedora, o pacote gráfico se chama `python3-tkinter`; no Arch Linux e no
+Manjaro, instale-o com `sudo pacman -S tk`.
+Como é uma aplicação desktop, ela precisa ser executada em uma sessão gráfica
+(X11 ou Wayland), não em um terminal remoto sem acesso a uma tela.
+
+## Gerar um aplicativo portátil para Linux
+
+Para gerar uma versão que não exige Python no computador de destino:
+
+```bash
+chmod +x build_linux.sh
+./build_linux.sh
+```
+
+O resultado fica em `dist/AssinaPDF/`. Distribua a pasta inteira e execute
+`dist/AssinaPDF/AssinaPDF`. O build deve ser feito no Linux e, de preferência,
+em uma distribuição tão antiga quanto a mais antiga que receberá o aplicativo,
+por causa da compatibilidade da glibc.
+
+O binário gerado é específico da arquitetura usada no build (por exemplo,
+x86_64 ou ARM64). O PyInstaller não gera o aplicativo Linux a partir do
+Windows; cada versão deve ser compilada em seu próprio sistema operacional.
+
 ## Gerar o instalador do Windows
 
 Em um computador Windows, instale o [Python 3.10 ou superior](https://www.python.org/downloads/windows/)
@@ -21,18 +63,16 @@ O instalador cria atalhos no Menu Iniciar e oferece, opcionalmente, um atalho
 na Área de Trabalho. Ele não exige Python na máquina de quem for usar o
 aplicativo.
 
-## Executar pelo código-fonte
+## Executar pelo código-fonte no Windows
 
 No terminal, dentro desta pasta:
 
-```bash
+```bat
 python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-pip install -r requirements.txt
+.venv\Scripts\activate
+python -m pip install -r requirements.txt
 python app.py
 ```
-
-No Windows, ative o ambiente com `.venv\Scripts\activate`.
 
 ## Uso
 
@@ -49,4 +89,4 @@ Os documentos originais não são alterados: as versões assinadas ficam na past
 ## Logo institucional
 
 A logo da Prefeitura já está incluída em `assets/logo_pmi_branca_3.png` e é
-embarcada automaticamente no executável Windows.
+embarcada automaticamente nos aplicativos Windows e Linux.
