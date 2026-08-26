@@ -41,11 +41,15 @@ class AssinadorPMI(ctk.CTk):
         self.output_dir: Path | None = None
         self.manual_positions: dict[str, tuple[float, float]] = {}
         self.manual_widths: dict[str, float] = {}
+        self.shared_manual_position: tuple[float, float] | None = None
+        self.shared_manual_width: float | None = None
         self.is_processing = False
         self.event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.logo_image: ctk.CTkImage | None = None
 
         self.position_var = ctk.StringVar(value="Inferior direita")
+        self.manual_enabled_var = ctk.BooleanVar(value=False)
+        self.manual_scope_var = ctk.StringVar(value="A mesma posição para todos (recomendado)")
         self.pages_var = ctk.StringVar(value="Última página")
         self.width_var = ctk.StringVar(value="45")
         self.margin_var = ctk.StringVar(value="12")
@@ -195,22 +199,58 @@ class AssinadorPMI(ctk.CTk):
         fields.grid_columnconfigure(0, weight=1)
         fields.grid_columnconfigure(1, weight=1)
 
-        self._option_field(fields, "Posição", self.position_var, [
-            "Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro", "Manual por PDF"
+        self._option_field(fields, "Posição padrão", self.position_var, [
+            "Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro"
         ], 0, 0)
         self._option_field(fields, "Aplicar em", self.pages_var, ["Última página", "Primeira página", "Todas as páginas"], 0, 1)
         self._entry_field(fields, "Largura (mm)", self.width_var, 1, 0)
         self._entry_field(fields, "Margem (mm)", self.margin_var, 1, 1)
+
         ctk.CTkButton(
             parent,
-            text="Definir posições manualmente",
+            text="Pré-visualizar posição padrão",
+            fg_color="transparent",
+            text_color="#153B82",
+            border_width=1,
+            border_color="#153B82",
+            command=self._open_predefined_preview,
+        ).pack(anchor="w", padx=20, pady=(5, 10))
+
+        manual_box = ctk.CTkFrame(parent, fg_color="#EDF3FC", corner_radius=8)
+        manual_box.pack(fill="x", padx=20, pady=(0, 8))
+        ctk.CTkSwitch(
+            manual_box,
+            text="Quero ajustar a posição manualmente",
+            variable=self.manual_enabled_var,
+            command=self._toggle_manual_controls,
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color="#153B82",
+        ).pack(anchor="w", padx=12, pady=(10, 4))
+        ctk.CTkLabel(
+            manual_box,
+            text="Use somente quando a posição padrão não for suficiente.",
+            text_color="#4B5B70",
+            font=ctk.CTkFont(size=11),
+        ).pack(anchor="w", padx=12)
+        self.manual_controls = ctk.CTkFrame(manual_box, fg_color="transparent")
+        ctk.CTkLabel(self.manual_controls, text="Aplicar o ajuste em:", text_color="#4B5B70").pack(anchor="w", pady=(8, 3))
+        ctk.CTkOptionMenu(
+            self.manual_controls,
+            values=["A mesma posição para todos (recomendado)", "Uma posição por PDF"],
+            variable=self.manual_scope_var,
+            height=33,
+        ).pack(fill="x")
+        ctk.CTkButton(
+            self.manual_controls,
+            text="Abrir prévia e ajustar",
             fg_color="#5C6B80",
             hover_color="#475568",
             command=self._open_manual_editor,
-        ).pack(anchor="w", padx=20, pady=(5, 4))
+        ).pack(anchor="w", pady=(8, 5))
+        self.manual_controls.pack_forget()
         ctk.CTkLabel(
             parent,
-            text="No modo manual, clique na prévia de cada PDF para posicionar a assinatura. A assinatura é visual; para assinaturas certificadas, use um certificado digital apropriado.",
+            text="A assinatura é inserida como imagem visível. Para assinaturas certificadas, use um certificado digital apropriado.",
             text_color="#6A778B", justify="left", wraplength=330, font=ctk.CTkFont(size=11),
         ).pack(anchor="w", padx=20, pady=(3, 17))
 
@@ -271,6 +311,15 @@ class AssinadorPMI(ctk.CTk):
             self.output_dir = Path(folder)
             self.output_label_var.set(str(self.output_dir))
 
+    def _toggle_manual_controls(self) -> None:
+        if self.manual_enabled_var.get():
+            self.manual_controls.pack(fill="x", padx=12, pady=(0, 10))
+        else:
+            self.manual_controls.pack_forget()
+
+    def _is_shared_manual_mode(self) -> bool:
+        return self.manual_scope_var.get().startswith("A mesma")
+
     def _start_signing(self) -> None:
         if self.is_processing:
             return
@@ -285,15 +334,31 @@ class AssinadorPMI(ctk.CTk):
             return
         width_mm, margin_mm = dimensions
 
-        if self.position_var.get() == "Manual por PDF":
-            missing = [path for path in self.pdfs if str(path) not in self.manual_positions]
+        manual_mode = self.manual_enabled_var.get()
+        if manual_mode:
+            if self._is_shared_manual_mode():
+                missing = [] if self.shared_manual_position is not None else self.pdfs
+            else:
+                missing = [path for path in self.pdfs if str(path) not in self.manual_positions]
             if missing:
+                instructions = (
+                    "Escolha uma posição e um tamanho que serão aplicados a todos os PDFs na prévia que será aberta."
+                    if self._is_shared_manual_mode()
+                    else "Escolha a posição da assinatura para cada PDF na janela que será aberta."
+                )
                 messagebox.showinfo(
                     "Definir posições",
-                    "Escolha a posição da assinatura para cada PDF na janela que será aberta. Depois, clique em ASSINAR PDFs novamente.",
+                    instructions + " Depois, clique em ASSINAR PDFs novamente.",
                 )
                 self._open_manual_editor()
                 return
+
+        if manual_mode and self._is_shared_manual_mode():
+            manual_positions = {str(path): self.shared_manual_position for path in self.pdfs}
+            manual_widths = {str(path): self.shared_manual_width for path in self.pdfs if self.shared_manual_width}
+        else:
+            manual_positions = dict(self.manual_positions)
+            manual_widths = dict(self.manual_widths)
 
         output = self.output_dir or (self.pdfs[0].parent / DEFAULT_OUTPUT_NAME)
         self.is_processing = True
@@ -301,7 +366,7 @@ class AssinadorPMI(ctk.CTk):
         self.status_var.set("Processando documentos...")
         config = (
             list(self.pdfs), self.signature_path, output, width_mm, margin_mm,
-            self.position_var.get(), self.pages_var.get(), dict(self.manual_positions), dict(self.manual_widths),
+            "Manual por PDF" if manual_mode else self.position_var.get(), self.pages_var.get(), manual_positions, manual_widths,
         )
         threading.Thread(target=self._sign_batch, args=config, daemon=True).start()
 
@@ -326,8 +391,21 @@ class AssinadorPMI(ctk.CTk):
         dimensions = self._read_dimensions()
         if dimensions is None:
             return
-        self.position_var.set("Manual por PDF")
-        ManualPositionEditor(self, self.pdfs, self.signature_path, *dimensions)
+        self.manual_enabled_var.set(True)
+        self._toggle_manual_controls()
+        ManualPositionEditor(self, self.pdfs, self.signature_path, *dimensions, shared=self._is_shared_manual_mode())
+
+    def _open_predefined_preview(self) -> None:
+        if not self.pdfs:
+            messagebox.showwarning("Documentos", "Selecione pelo menos um arquivo PDF antes de abrir a prévia.")
+            return
+        if not self.signature_path or not self.signature_path.exists():
+            messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura antes de abrir a prévia.")
+            return
+        dimensions = self._read_dimensions()
+        if dimensions is None:
+            return
+        PositionPreview(self, self.pdfs, self.signature_path, *dimensions, self.position_var.get())
 
     def _sign_batch(
         self, pdfs: list[Path], signature: Path, output_dir: Path, width_mm: float, margin_mm: float, position: str,
@@ -449,13 +527,115 @@ class AssinadorPMI(ctk.CTk):
             messagebox.showinfo("Processamento concluído", message)
 
 
-class ManualPositionEditor(ctk.CTkToplevel):
-    """Prévia clicável que registra uma posição independente para cada PDF."""
+class PositionPreview(ctk.CTkToplevel):
+    """Exibe como uma posição padrão ficará antes de assinar o lote."""
 
-    def __init__(self, app: AssinadorPMI, pdfs: list[Path], signature: Path, width_mm: float, margin_mm: float) -> None:
+    def __init__(
+        self, app: AssinadorPMI, pdfs: list[Path], signature: Path, width_mm: float, margin_mm: float, position: str,
+    ) -> None:
         super().__init__(app)
         self.app = app
         self.pdfs = pdfs
+        self.signature = signature
+        self.width = width_mm * MM_TO_POINTS
+        self.margin = margin_mm * MM_TO_POINTS
+        self.position = position
+        self.index = 0
+        self.preview_image: ImageTk.PhotoImage | None = None
+        self.signature_image: ImageTk.PhotoImage | None = None
+
+        self.title("Pré-visualização da assinatura")
+        self.geometry("1120x850")
+        self.minsize(900, 720)
+        self.configure(fg_color="#F3F6FA")
+        self.transient(app)
+
+        self.document_var = ctk.StringVar()
+        ctk.CTkLabel(
+            self, text="Pré-visualização da posição padrão", font=ctk.CTkFont(size=21, weight="bold"), text_color="#153B82"
+        ).pack(pady=(18, 3))
+        ctk.CTkLabel(
+            self, text=f"Posição escolhida: {position}. Nenhum PDF será alterado nesta etapa.", text_color="#4B5B70"
+        ).pack(padx=20)
+        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 4))
+
+        preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
+        preview_frame.pack(fill="both", expand=True, padx=24, pady=14)
+        self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True, padx=8, pady=8)
+
+        controls = ctk.CTkFrame(self, fg_color="transparent")
+        controls.pack(fill="x", padx=24, pady=(0, 18))
+        self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=110, command=self._previous)
+        self.previous_button.pack(side="left")
+        self.next_button = ctk.CTkButton(controls, text="Próximo →", width=110, command=self._next)
+        self.next_button.pack(side="left", padx=8)
+        ctk.CTkButton(controls, text="Fechar", command=self.destroy).pack(side="right")
+        self._render_current()
+
+    def _page_number(self, document: fitz.Document) -> int:
+        return 0 if self.app.pages_var.get() == "Primeira página" else document.page_count - 1
+
+    def _render_current(self) -> None:
+        pdf_path = self.pdfs[self.index]
+        self.document_var.set(f"Documento {self.index + 1} de {len(self.pdfs)}: {pdf_path.name}")
+        try:
+            document = fitz.open(pdf_path)
+            try:
+                if document.page_count == 0:
+                    raise ValueError("PDF sem páginas")
+                page = document[self._page_number(document)]
+                page_rect = page.rect
+                scale = min(1.8, 900 / page_rect.width, 630 / page_rect.height)
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+            finally:
+                document.close()
+            page_image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+            self.preview_image = ImageTk.PhotoImage(page_image)
+            self.canvas.configure(width=pixmap.width, height=pixmap.height)
+            self.canvas.delete("all")
+            self.canvas.create_image(0, 0, image=self.preview_image, anchor="nw")
+            with Image.open(self.signature) as signature_image:
+                aspect_ratio = signature_image.height / signature_image.width
+                rect = AssinadorPMI._signature_rectangle(
+                    page_rect, self.width, self.width * aspect_ratio, self.margin, self.position
+                )
+                preview = signature_image.convert("RGBA").resize(
+                    (max(1, round(rect.width * scale)), max(1, round(rect.height * scale))), Image.Resampling.LANCZOS
+                )
+            self.signature_image = ImageTk.PhotoImage(preview)
+            x = (rect.x0 - page_rect.x0) * scale
+            y = (rect.y0 - page_rect.y0) * scale
+            self.canvas.create_image(x, y, image=self.signature_image, anchor="nw")
+            self.canvas.create_rectangle(x, y, x + preview.width, y + preview.height, outline="#00A650", width=2)
+        except Exception as error:
+            self.canvas.delete("all")
+            self.canvas.configure(width=620, height=260)
+            self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
+        self.previous_button.configure(state="normal" if self.index else "disabled")
+        self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+
+    def _previous(self) -> None:
+        self.index -= 1
+        self._render_current()
+
+    def _next(self) -> None:
+        self.index += 1
+        self._render_current()
+
+
+class ManualPositionEditor(ctk.CTkToplevel):
+    """Prévia clicável para uma posição compartilhada ou independente por PDF."""
+
+    def __init__(
+        self, app: AssinadorPMI, pdfs: list[Path], signature: Path, width_mm: float, margin_mm: float,
+        shared: bool = False,
+    ) -> None:
+        super().__init__(app)
+        self.app = app
+        self.all_pdfs = pdfs
+        self.shared = shared
+        self.pdfs = pdfs[:1] if shared else pdfs
         self.signature = signature
         self.default_width_mm = width_mm
         self.current_width_mm = width_mm
@@ -468,9 +648,9 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.preview_image: ImageTk.PhotoImage | None = None
         self.signature_image: ImageTk.PhotoImage | None = None
 
-        self.title("Definir posição manual da assinatura")
-        self.geometry("900x690")
-        self.minsize(760, 590)
+        self.title("Ajustar posição manual da assinatura")
+        self.geometry("1120x850")
+        self.minsize(900, 720)
         self.configure(fg_color="#F3F6FA")
         self.transient(app)
         self.grab_set()
@@ -480,13 +660,16 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.size_var = ctk.StringVar()
         ctk.CTkLabel(
             self,
-            text="Posição manual por PDF",
+            text="Uma posição para todos os PDFs" if shared else "Uma posição diferente por PDF",
             font=ctk.CTkFont(size=21, weight="bold"),
             text_color="#153B82",
         ).pack(pady=(18, 2))
         ctk.CTkLabel(
             self,
-            text="Clique na prévia para posicionar o centro da assinatura. A marca pode ser ajustada novamente a qualquer momento.",
+            text=(
+                "Clique na prévia para escolher a posição e o tamanho que serão usados em todos os PDFs."
+                if shared else "Clique na prévia para posicionar a assinatura em cada PDF. Use Próximo para continuar."
+            ),
             text_color="#4B5B70",
         ).pack(padx=20)
         ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 2))
@@ -499,7 +682,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.size_slider = ctk.CTkSlider(
             self, from_=10, to=250, number_of_steps=240, command=self._change_size, progress_color="#00A650"
         )
-        self.size_slider.pack(fill="x", padx=105, pady=(3, 5))
+        self.size_slider.pack(fill="x", padx=125, pady=(3, 5))
 
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=14)
@@ -510,9 +693,10 @@ class ManualPositionEditor(ctk.CTkToplevel):
         controls = ctk.CTkFrame(self, fg_color="transparent")
         controls.pack(fill="x", padx=24, pady=(0, 18))
         self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=110, command=self._previous)
-        self.previous_button.pack(side="left")
         self.next_button = ctk.CTkButton(controls, text="Próximo →", width=110, command=self._next)
-        self.next_button.pack(side="left", padx=8)
+        if not shared:
+            self.previous_button.pack(side="left")
+            self.next_button.pack(side="left", padx=8)
         ctk.CTkButton(
             controls, text="Salvar posições", fg_color="#00A650", hover_color="#008A42", command=self._save
         ).pack(side="right")
@@ -527,8 +711,9 @@ class ManualPositionEditor(ctk.CTkToplevel):
 
     def _render_current(self) -> None:
         pdf_path = self.pdfs[self.index]
-        self.document_var.set(f"Documento {self.index + 1} de {len(self.pdfs)}: {pdf_path.name}")
-        self.current_width_mm = self.app.manual_widths.get(str(pdf_path.resolve()), self.default_width_mm)
+        label = "Prévia de referência" if self.shared else f"Documento {self.index + 1} de {len(self.pdfs)}"
+        self.document_var.set(f"{label}: {pdf_path.name}")
+        self.current_width_mm = self._get_width(pdf_path)
         self.size_slider.set(min(250, max(10, self.current_width_mm)))
         self.size_var.set(f"{self.current_width_mm:.0f} mm")
         try:
@@ -538,7 +723,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
                     raise ValueError("PDF sem páginas")
                 page = document[self._page_number(document)]
                 self.page_rect = page.rect
-                self.scale = min(1.35, 690 / page.rect.width, 410 / page.rect.height)
+                self.scale = min(1.8, 900 / page.rect.width, 610 / page.rect.height)
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(self.scale, self.scale), alpha=False)
             finally:
                 document.close()
@@ -548,15 +733,36 @@ class ManualPositionEditor(ctk.CTkToplevel):
             self.canvas.delete("all")
             self.canvas.create_image(0, 0, image=self.preview_image, anchor="nw")
             self._draw_signature()
-            configured = str(pdf_path.resolve()) in self.app.manual_positions
+            configured = self._get_position(pdf_path) is not None
             self.instruction_var.set("Posição definida — clique para ajustar." if configured else "Posição pendente — clique sobre a prévia.")
         except Exception as error:
             self.canvas.delete("all")
             self.canvas.configure(width=620, height=260)
             self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
             self.instruction_var.set("Escolha outro documento ou corrija o PDF antes de continuar.")
-        self.previous_button.configure(state="normal" if self.index else "disabled")
-        self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+        if not self.shared:
+            self.previous_button.configure(state="normal" if self.index else "disabled")
+            self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+
+    def _get_position(self, pdf_path: Path) -> tuple[float, float] | None:
+        return self.app.shared_manual_position if self.shared else self.app.manual_positions.get(str(pdf_path.resolve()))
+
+    def _set_position(self, pdf_path: Path, position: tuple[float, float]) -> None:
+        if self.shared:
+            self.app.shared_manual_position = position
+        else:
+            self.app.manual_positions[str(pdf_path.resolve())] = position
+
+    def _get_width(self, pdf_path: Path) -> float:
+        if self.shared:
+            return self.app.shared_manual_width or self.default_width_mm
+        return self.app.manual_widths.get(str(pdf_path.resolve()), self.default_width_mm)
+
+    def _set_width(self, pdf_path: Path, width: float) -> None:
+        if self.shared:
+            self.app.shared_manual_width = width
+        else:
+            self.app.manual_widths[str(pdf_path.resolve())] = width
 
     def _draw_signature(self) -> None:
         if self.page_rect is None:
@@ -566,7 +772,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
             rect = AssinadorPMI._signature_rectangle(
                 self.page_rect, self.current_width_mm * MM_TO_POINTS,
                 self.current_width_mm * MM_TO_POINTS * aspect_ratio, self.margin,
-                "Manual por PDF", self.app.manual_positions.get(str(self.pdfs[self.index].resolve())),
+                "Manual por PDF", self._get_position(self.pdfs[self.index]),
             )
             self.signature_width = rect.width
             self.signature_height = rect.height
@@ -583,7 +789,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         if self.page_rect is None:
             return
         self.current_width_mm = round(float(value))
-        self.app.manual_widths[str(self.pdfs[self.index].resolve())] = self.current_width_mm
+        self._set_width(self.pdfs[self.index], self.current_width_mm)
         self._render_current()
 
     def _choose_position(self, event: object) -> None:
@@ -594,10 +800,10 @@ class ManualPositionEditor(ctk.CTkToplevel):
         y = float(getattr(event, "y")) / self.scale + self.page_rect.y0 - self.signature_height / 2
         x = min(max(x, self.page_rect.x0), self.page_rect.x1 - self.signature_width)
         y = min(max(y, self.page_rect.y0), self.page_rect.y1 - self.signature_height)
-        self.app.manual_positions[str(self.pdfs[self.index].resolve())] = (
+        self._set_position(self.pdfs[self.index], (
             (x - self.page_rect.x0) / self.page_rect.width,
             (y - self.page_rect.y0) / self.page_rect.height,
-        )
+        ))
         self._render_current()
 
     def _previous(self) -> None:
@@ -609,7 +815,9 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self._render_current()
 
     def _save(self) -> None:
-        missing = [path.name for path in self.pdfs if str(path.resolve()) not in self.app.manual_positions]
+        missing = [] if self.shared and self.app.shared_manual_position is not None else [
+            path.name for path in self.all_pdfs if self._get_position(path) is None
+        ]
         if missing:
             messagebox.showwarning(
                 "Posições pendentes",

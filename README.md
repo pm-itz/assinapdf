@@ -80,12 +80,16 @@ python app.py
    **Selecionar pasta** para carregar todos os PDFs de uma pasta.
 2. Escolha a imagem da assinatura (PNG, JPG ou JPEG). PNG transparente costuma
    gerar o melhor resultado.
-3. Defina a página, o canto, a largura e a margem. Para escolher a posição em
-   cada documento individualmente, selecione **Manual por PDF** e clique em
-   **Definir posições manualmente**. Na prévia, clique no ponto em que a
-   assinatura deve ficar para cada PDF. Use o controle de **Tamanho da
-   assinatura neste PDF** para redimensioná-la individualmente.
-4. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
+3. Escolha uma **Posição padrão** e clique em **Pré-visualizar posição padrão**
+   para conferir o resultado antes de assinar. Essa é a opção mais simples e
+   aplica o mesmo canto a todo o lote.
+4. Somente se necessário, ative **Quero ajustar a posição manualmente**.
+   Escolha **A mesma posição para todos (recomendado)** para definir uma única
+   posição e tamanho para o lote inteiro. Use **Uma posição por PDF** apenas
+   quando os documentos realmente precisarem de ajustes diferentes.
+5. Na prévia manual, clique no local desejado e ajuste o controle de tamanho.
+   A área de visualização é ampliada para facilitar o posicionamento.
+6. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
 
 Os documentos originais não são alterados: as versões assinadas ficam na pasta
 `pdfs_assinados`, ao lado dos PDFs, ou na pasta de saída escolhida.
