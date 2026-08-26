@@ -84,11 +84,12 @@ python app.py
    para conferir o resultado antes de assinar. Essa é a opção mais simples e
    aplica o mesmo canto a todo o lote.
 4. Somente se necessário, ative **Quero ajustar a posição manualmente**.
-   Escolha **A mesma posição para todos (recomendado)** para definir uma única
-   posição e tamanho para o lote inteiro. Use **Uma posição por PDF** apenas
-   quando os documentos realmente precisarem de ajustes diferentes.
+   Na janela de ajuste, mantenha marcada a opção **Usar a mesma posição e
+   tamanho em todos os PDFs** para definir uma única escolha para o lote
+   inteiro. Desmarque-a apenas se os documentos realmente precisarem de
+   ajustes diferentes; os botões **Anterior** e **Próximo** serão exibidos.
 5. Na prévia manual, clique no local desejado e ajuste o controle de tamanho.
-   A área de visualização é ampliada para facilitar o posicionamento.
+   Os controles ficam acima da página e a visualização é centralizada.
 6. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
 
 Os documentos originais não são alterados: as versões assinadas ficam na pasta

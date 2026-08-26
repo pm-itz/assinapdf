@@ -49,7 +49,7 @@ class AssinadorPMI(ctk.CTk):
 
         self.position_var = ctk.StringVar(value="Inferior direita")
         self.manual_enabled_var = ctk.BooleanVar(value=False)
-        self.manual_scope_var = ctk.StringVar(value="A mesma posição para todos (recomendado)")
+        self.shared_manual_var = ctk.BooleanVar(value=True)
         self.pages_var = ctk.StringVar(value="Última página")
         self.width_var = ctk.StringVar(value="45")
         self.margin_var = ctk.StringVar(value="12")
@@ -233,20 +233,13 @@ class AssinadorPMI(ctk.CTk):
             font=ctk.CTkFont(size=11),
         ).pack(anchor="w", padx=12)
         self.manual_controls = ctk.CTkFrame(manual_box, fg_color="transparent")
-        ctk.CTkLabel(self.manual_controls, text="Aplicar o ajuste em:", text_color="#4B5B70").pack(anchor="w", pady=(8, 3))
-        ctk.CTkOptionMenu(
-            self.manual_controls,
-            values=["A mesma posição para todos (recomendado)", "Uma posição por PDF"],
-            variable=self.manual_scope_var,
-            height=33,
-        ).pack(fill="x")
         ctk.CTkButton(
             self.manual_controls,
             text="Abrir prévia e ajustar",
             fg_color="#5C6B80",
             hover_color="#475568",
             command=self._open_manual_editor,
-        ).pack(anchor="w", pady=(8, 5))
+        ).pack(anchor="w", pady=(8, 3))
         self.manual_controls.pack_forget()
         ctk.CTkLabel(
             parent,
@@ -318,7 +311,7 @@ class AssinadorPMI(ctk.CTk):
             self.manual_controls.pack_forget()
 
     def _is_shared_manual_mode(self) -> bool:
-        return self.manual_scope_var.get().startswith("A mesma")
+        return self.shared_manual_var.get()
 
     def _start_signing(self) -> None:
         if self.is_processing:
@@ -559,18 +552,18 @@ class PositionPreview(ctk.CTkToplevel):
         ).pack(padx=20)
         ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 4))
 
-        preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
-        preview_frame.pack(fill="both", expand=True, padx=24, pady=14)
-        self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True, padx=8, pady=8)
-
         controls = ctk.CTkFrame(self, fg_color="transparent")
-        controls.pack(fill="x", padx=24, pady=(0, 18))
+        controls.pack(fill="x", padx=24, pady=(0, 8))
         self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=110, command=self._previous)
         self.previous_button.pack(side="left")
         self.next_button = ctk.CTkButton(controls, text="Próximo →", width=110, command=self._next)
         self.next_button.pack(side="left", padx=8)
         ctk.CTkButton(controls, text="Fechar", command=self.destroy).pack(side="right")
+
+        preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
+        preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
+        self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0)
+        self.canvas.pack(expand=True, padx=8, pady=8)
         self._render_current()
 
     def _page_number(self, document: fitz.Document) -> int:
@@ -658,49 +651,40 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.document_var = ctk.StringVar()
         self.instruction_var = ctk.StringVar()
         self.size_var = ctk.StringVar()
-        ctk.CTkLabel(
-            self,
-            text="Uma posição para todos os PDFs" if shared else "Uma posição diferente por PDF",
-            font=ctk.CTkFont(size=21, weight="bold"),
-            text_color="#153B82",
-        ).pack(pady=(18, 2))
-        ctk.CTkLabel(
-            self,
-            text=(
-                "Clique na prévia para escolher a posição e o tamanho que serão usados em todos os PDFs."
-                if shared else "Clique na prévia para posicionar a assinatura em cada PDF. Use Próximo para continuar."
-            ),
-            text_color="#4B5B70",
-        ).pack(padx=20)
-        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 2))
-        ctk.CTkLabel(self, textvariable=self.instruction_var, text_color="#4B5B70", font=ctk.CTkFont(size=12)).pack()
 
         size_row = ctk.CTkFrame(self, fg_color="transparent")
-        size_row.pack(fill="x", padx=105, pady=(11, 0))
-        ctk.CTkLabel(size_row, text="Tamanho da assinatura neste PDF:", text_color="#153B82").pack(side="left")
+        size_row.pack(fill="x", padx=105, pady=(20, 0))
+        ctk.CTkLabel(size_row, text="Tamanho da assinatura:", text_color="#153B82").pack(side="left")
         ctk.CTkLabel(size_row, textvariable=self.size_var, font=ctk.CTkFont(weight="bold"), text_color="#00A650").pack(side="right")
         self.size_slider = ctk.CTkSlider(
             self, from_=10, to=250, number_of_steps=240, command=self._change_size, progress_color="#00A650"
         )
         self.size_slider.pack(fill="x", padx=125, pady=(3, 5))
 
+        controls = ctk.CTkFrame(self, fg_color="transparent")
+        controls.pack(fill="x", padx=24, pady=(5, 8))
+        self.shared_checkbox = ctk.CTkCheckBox(
+            controls,
+            text="Usar a mesma posição e tamanho em todos os PDFs",
+            variable=self.app.shared_manual_var,
+            command=self._toggle_shared_mode,
+            text_color="#153B82",
+        )
+        self.shared_checkbox.pack(side="left")
+        self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=105, command=self._previous)
+        self.next_button = ctk.CTkButton(controls, text="Próximo →", width=105, command=self._next)
+        ctk.CTkButton(
+            controls, text="Salvar posição", fg_color="#00A650", hover_color="#008A42", command=self._save
+        ).pack(side="right")
+        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(0, 5))
+
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
-        preview_frame.pack(fill="both", expand=True, padx=24, pady=14)
+        preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
         self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0, cursor="crosshair")
-        self.canvas.pack(fill="both", expand=True, padx=8, pady=8)
+        self.canvas.pack(expand=True, padx=8, pady=8)
         self.canvas.bind("<Button-1>", self._choose_position)
 
-        controls = ctk.CTkFrame(self, fg_color="transparent")
-        controls.pack(fill="x", padx=24, pady=(0, 18))
-        self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=110, command=self._previous)
-        self.next_button = ctk.CTkButton(controls, text="Próximo →", width=110, command=self._next)
-        if not shared:
-            self.previous_button.pack(side="left")
-            self.next_button.pack(side="left", padx=8)
-        ctk.CTkButton(
-            controls, text="Salvar posições", fg_color="#00A650", hover_color="#008A42", command=self._save
-        ).pack(side="right")
-
+        self._sync_shared_controls()
         self._render_current()
 
     def _page_number(self, document: fitz.Document) -> int:
@@ -743,6 +727,30 @@ class ManualPositionEditor(ctk.CTkToplevel):
         if not self.shared:
             self.previous_button.configure(state="normal" if self.index else "disabled")
             self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+
+    def _sync_shared_controls(self) -> None:
+        if self.shared:
+            self.previous_button.pack_forget()
+            self.next_button.pack_forget()
+        else:
+            self.previous_button.pack(side="left", padx=(12, 0))
+            self.next_button.pack(side="left", padx=8)
+
+    def _toggle_shared_mode(self) -> None:
+        shared = self.app.shared_manual_var.get()
+        if shared == self.shared:
+            return
+        if not shared and self.app.shared_manual_position is not None:
+            # Parte da posição comum e permite ajustar apenas os PDFs necessários.
+            for pdf_path in self.all_pdfs:
+                self.app.manual_positions.setdefault(str(pdf_path.resolve()), self.app.shared_manual_position)
+                if self.app.shared_manual_width is not None:
+                    self.app.manual_widths.setdefault(str(pdf_path.resolve()), self.app.shared_manual_width)
+        self.shared = shared
+        self.pdfs = self.all_pdfs[:1] if shared else self.all_pdfs
+        self.index = 0
+        self._sync_shared_controls()
+        self._render_current()
 
     def _get_position(self, pdf_path: Path) -> tuple[float, float] | None:
         return self.app.shared_manual_position if self.shared else self.app.manual_positions.get(str(pdf_path.resolve()))
