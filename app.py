@@ -71,7 +71,18 @@ class AssinadorPMI(ctk.CTk):
         self._build_interface()
         self._set_window_icon()
         self._build_menu()
+        self.after(100, self._maximize_window)
         self.after(120, self._process_events)
+
+    def _maximize_window(self) -> None:
+        """Inicia ocupando toda a área útil da tela e mantém a barra de título."""
+        try:
+            self.state("zoomed")  # Windows
+        except Exception:
+            try:
+                self.attributes("-zoomed", True)  # Linux
+            except Exception:
+                pass
 
     def _build_menu(self) -> None:
         menu_bar = Menu(self)
