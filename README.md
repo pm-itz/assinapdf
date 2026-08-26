@@ -63,6 +63,22 @@ O instalador cria atalhos no Menu Iniciar e oferece, opcionalmente, um atalho
 na Área de Trabalho. Ele não exige Python na máquina de quem for usar o
 aplicativo.
 
+Além de `release\AssinaPDF-Setup.exe`, o script copia o instalador para a Área
+de Trabalho de quem executou a compilação, facilitando sua distribuição e
+instalação.
+
+## Atualizações pelo aplicativo (Windows)
+
+No menu **Ajuda > Verificar atualizações**, o AssinaPDF consulta a Release mais
+recente do repositório oficial no GitHub. Quando houver uma versão mais nova,
+o usuário confirma uma vez; o aplicativo baixa o instalador oficial, inicia a
+atualização e fecha para concluir a instalação.
+
+Para publicar uma atualização, altere `APP_VERSION` em `app.py` e
+`MyAppVersion` em `installer.iss`, gere `AssinaPDF-Setup.exe` no Windows e
+publique uma GitHub Release com uma tag no formato `v1.0.1`. Anexe ao Release
+o arquivo com o nome exato `AssinaPDF-Setup.exe`.
+
 ## Executar pelo código-fonte no Windows
 
 No terminal, dentro desta pasta:

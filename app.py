@@ -6,16 +6,22 @@ gera uma assinatura digital criptográfica/certificada (ICP-Brasil).
 
 from __future__ import annotations
 
+import json
 import queue
+import re
+import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 from typing import Iterable
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 import customtkinter as ctk
 import fitz  # PyMuPDF
 from PIL import Image, ImageTk
-from tkinter import Canvas, filedialog, messagebox
+from tkinter import Canvas, Menu, filedialog, messagebox
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -24,6 +30,10 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
+APP_VERSION = "1.0.0"
+GITHUB_REPOSITORY = "pm-itz/assinapdf"
+UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
+LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
 
 
 class AssinadorPMI(ctk.CTk):
@@ -60,7 +70,22 @@ class AssinadorPMI(ctk.CTk):
 
         self._build_interface()
         self._set_window_icon()
+        self._build_menu()
         self.after(120, self._process_events)
+
+    def _build_menu(self) -> None:
+        menu_bar = Menu(self)
+        help_menu = Menu(menu_bar, tearoff=0)
+        help_menu.add_command(label="Verificar atualizações", command=self._check_for_updates)
+        help_menu.add_separator()
+        help_menu.add_command(
+            label="Sobre o AssinaPDF",
+            command=lambda: messagebox.showinfo(
+                "Sobre o AssinaPDF", f"AssinaPDF\nPrefeitura Municipal de Imperatriz\nVersão {APP_VERSION}", parent=self
+            ),
+        )
+        menu_bar.add_cascade(label="Ajuda", menu=help_menu)
+        self.configure(menu=menu_bar)
 
     def _set_window_icon(self) -> None:
         """Usa a marca institucional tanto no código-fonte quanto no .exe."""
@@ -496,6 +521,75 @@ class AssinadorPMI(ctk.CTk):
             x0, y0 = page.x0 + (page.width - width) / 2, page.y0 + (page.height - height) / 2
         return fitz.Rect(x0, y0, x0 + width, y0 + height)
 
+    @staticmethod
+    def _version_key(version: str) -> tuple[int, ...]:
+        """Compara versões simples como 1.2.0 ou v1.2.0 sem nova dependência."""
+        numbers = [int(value) for value in re.findall(r"\d+", version)]
+        return tuple((numbers + [0, 0, 0, 0])[:4])
+
+    def _check_for_updates(self) -> None:
+        if not sys.platform.startswith("win"):
+            messagebox.showinfo(
+                "Atualizações",
+                "A atualização automática instala o pacote do Windows. No Linux, atualize o aplicativo pela versão distribuída para esse sistema.",
+                parent=self,
+            )
+            return
+        self.status_var.set("Verificando atualizações...")
+        threading.Thread(target=self._fetch_latest_release, daemon=True).start()
+
+    def _fetch_latest_release(self) -> None:
+        try:
+            request = Request(LATEST_RELEASE_API, headers={"Accept": "application/vnd.github+json", "User-Agent": "AssinaPDF"})
+            with urlopen(request, timeout=15) as response:
+                release = json.load(response)
+            version = str(release.get("tag_name", "")).lstrip("vV")
+            if not version:
+                raise ValueError("A Release mais recente não possui uma versão válida.")
+            if self._version_key(version) <= self._version_key(APP_VERSION):
+                self.event_queue.put(("update_current", version))
+                return
+            asset = next((item for item in release.get("assets", []) if item.get("name") == UPDATE_ASSET_NAME), None)
+            if not asset:
+                raise ValueError(f"A Release {version} não possui o arquivo {UPDATE_ASSET_NAME}.")
+            download_url = str(asset.get("browser_download_url", ""))
+            trusted_prefix = f"https://github.com/{GITHUB_REPOSITORY}/"
+            if not download_url.startswith(trusted_prefix):
+                raise ValueError("O endereço do instalador não pertence ao repositório oficial.")
+            self.event_queue.put(("update_available", (version, download_url)))
+        except (OSError, URLError, ValueError, json.JSONDecodeError) as error:
+            self.event_queue.put(("update_error", str(error)))
+
+    def _offer_update(self, version: str, download_url: str) -> None:
+        self.status_var.set(f"Atualização {version} disponível.")
+        if messagebox.askyesno(
+            "Atualização disponível",
+            f"A versão {version} está disponível.\n\nDeseja baixar e instalar agora?",
+            parent=self,
+        ):
+            self.status_var.set("Baixando atualização...")
+            threading.Thread(target=self._download_update, args=(version, download_url), daemon=True).start()
+
+    def _download_update(self, version: str, download_url: str) -> None:
+        try:
+            destination = Path(tempfile.gettempdir()) / f"AssinaPDF-Setup-{version}.exe"
+            request = Request(download_url, headers={"User-Agent": "AssinaPDF"})
+            with urlopen(request, timeout=60) as response, destination.open("wb") as installer:
+                while block := response.read(1024 * 256):
+                    installer.write(block)
+            self.event_queue.put(("update_downloaded", destination))
+        except (OSError, URLError) as error:
+            self.event_queue.put(("update_error", str(error)))
+
+    def _install_downloaded_update(self, installer: Path) -> None:
+        try:
+            # O Inno Setup solicita elevação se necessária e substitui a versão instalada.
+            subprocess.Popen([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS"])
+            self.status_var.set("Instalador iniciado. O AssinaPDF será fechado para concluir a atualização.")
+            self.after(500, self.destroy)
+        except OSError as error:
+            messagebox.showerror("Atualização", f"Não foi possível iniciar o instalador:\n{error}", parent=self)
+
     def _process_events(self) -> None:
         try:
             while True:
@@ -504,6 +598,16 @@ class AssinadorPMI(ctk.CTk):
                     self.status_var.set(str(data))
                 elif event == "done":
                     self._finish_signing(*data)  # type: ignore[arg-type]
+                elif event == "update_current":
+                    self.status_var.set("O AssinaPDF já está atualizado.")
+                    messagebox.showinfo("Atualizações", "Você já está usando a versão mais recente.", parent=self)
+                elif event == "update_available":
+                    self._offer_update(*data)  # type: ignore[arg-type]
+                elif event == "update_downloaded":
+                    self._install_downloaded_update(data)  # type: ignore[arg-type]
+                elif event == "update_error":
+                    self.status_var.set("Não foi possível verificar atualizações.")
+                    messagebox.showerror("Atualizações", f"Não foi possível concluir a atualização:\n{data}", parent=self)
         except queue.Empty:
             pass
         self.after(120, self._process_events)
