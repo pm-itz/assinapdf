@@ -14,8 +14,8 @@ from typing import Iterable
 
 import customtkinter as ctk
 import fitz  # PyMuPDF
-from PIL import Image
-from tkinter import filedialog, messagebox
+from PIL import Image, ImageTk
+from tkinter import Canvas, filedialog, messagebox
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -39,6 +39,8 @@ class AssinadorPMI(ctk.CTk):
         self.pdfs: list[Path] = []
         self.signature_path: Path | None = None
         self.output_dir: Path | None = None
+        self.manual_positions: dict[str, tuple[float, float]] = {}
+        self.manual_widths: dict[str, float] = {}
         self.is_processing = False
         self.event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.logo_image: ctk.CTkImage | None = None
@@ -53,7 +55,17 @@ class AssinadorPMI(ctk.CTk):
         self.output_label_var = ctk.StringVar(value="Será criada junto aos PDFs")
 
         self._build_interface()
+        self._set_window_icon()
         self.after(120, self._process_events)
+
+    def _set_window_icon(self) -> None:
+        """Usa a marca institucional tanto no código-fonte quanto no .exe."""
+        icon_path = BUNDLE_DIR / "assets" / "imperatriz.ico"
+        if icon_path.exists():
+            try:
+                self.iconbitmap(str(icon_path))
+            except Exception:
+                pass
 
     def _build_interface(self) -> None:
         header = ctk.CTkFrame(self, height=128, corner_radius=0, fg_color="#153B82")
@@ -184,14 +196,21 @@ class AssinadorPMI(ctk.CTk):
         fields.grid_columnconfigure(1, weight=1)
 
         self._option_field(fields, "Posição", self.position_var, [
-            "Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro"
+            "Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro", "Manual por PDF"
         ], 0, 0)
         self._option_field(fields, "Aplicar em", self.pages_var, ["Última página", "Primeira página", "Todas as páginas"], 0, 1)
         self._entry_field(fields, "Largura (mm)", self.width_var, 1, 0)
         self._entry_field(fields, "Margem (mm)", self.margin_var, 1, 1)
+        ctk.CTkButton(
+            parent,
+            text="Definir posições manualmente",
+            fg_color="#5C6B80",
+            hover_color="#475568",
+            command=self._open_manual_editor,
+        ).pack(anchor="w", padx=20, pady=(5, 4))
         ctk.CTkLabel(
             parent,
-            text="A assinatura é inserida como imagem visível. Para assinaturas certificadas, use um certificado digital apropriado.",
+            text="No modo manual, clique na prévia de cada PDF para posicionar a assinatura. A assinatura é visual; para assinaturas certificadas, use um certificado digital apropriado.",
             text_color="#6A778B", justify="left", wraplength=330, font=ctk.CTkFont(size=11),
         ).pack(anchor="w", padx=20, pady=(3, 17))
 
@@ -220,6 +239,9 @@ class AssinadorPMI(ctk.CTk):
 
     def _set_pdfs(self, paths: Iterable[Path]) -> None:
         self.pdfs = list(dict.fromkeys(path.resolve() for path in paths if path.suffix.lower() == ".pdf"))
+        selected = {str(path) for path in self.pdfs}
+        self.manual_positions = {path: point for path, point in self.manual_positions.items() if path in selected}
+        self.manual_widths = {path: width for path, width in self.manual_widths.items() if path in selected}
         if self.pdfs and self.output_dir is None:
             self.output_label_var.set(str(self.pdfs[0].parent / DEFAULT_OUTPUT_NAME))
         self._update_pdf_list()
@@ -258,24 +280,58 @@ class AssinadorPMI(ctk.CTk):
         if not self.signature_path or not self.signature_path.exists():
             messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura válida.")
             return
-        try:
-            width_mm = float(self.width_var.get().replace(",", "."))
-            margin_mm = float(self.margin_var.get().replace(",", "."))
-            if width_mm <= 0 or margin_mm < 0:
-                raise ValueError
-        except ValueError:
-            messagebox.showwarning("Medidas", "Informe largura maior que zero e margem igual ou maior que zero.")
+        dimensions = self._read_dimensions()
+        if dimensions is None:
             return
+        width_mm, margin_mm = dimensions
+
+        if self.position_var.get() == "Manual por PDF":
+            missing = [path for path in self.pdfs if str(path) not in self.manual_positions]
+            if missing:
+                messagebox.showinfo(
+                    "Definir posições",
+                    "Escolha a posição da assinatura para cada PDF na janela que será aberta. Depois, clique em ASSINAR PDFs novamente.",
+                )
+                self._open_manual_editor()
+                return
 
         output = self.output_dir or (self.pdfs[0].parent / DEFAULT_OUTPUT_NAME)
         self.is_processing = True
         self.sign_button.configure(state="disabled", text="ASSINANDO...")
         self.status_var.set("Processando documentos...")
-        config = (list(self.pdfs), self.signature_path, output, width_mm, margin_mm, self.position_var.get(), self.pages_var.get())
+        config = (
+            list(self.pdfs), self.signature_path, output, width_mm, margin_mm,
+            self.position_var.get(), self.pages_var.get(), dict(self.manual_positions), dict(self.manual_widths),
+        )
         threading.Thread(target=self._sign_batch, args=config, daemon=True).start()
 
+    def _read_dimensions(self) -> tuple[float, float] | None:
+        try:
+            width_mm = float(self.width_var.get().replace(",", "."))
+            margin_mm = float(self.margin_var.get().replace(",", "."))
+            if width_mm <= 0 or margin_mm < 0:
+                raise ValueError
+            return width_mm, margin_mm
+        except ValueError:
+            messagebox.showwarning("Medidas", "Informe largura maior que zero e margem igual ou maior que zero.")
+            return None
+
+    def _open_manual_editor(self) -> None:
+        if not self.pdfs:
+            messagebox.showwarning("Documentos", "Selecione pelo menos um arquivo PDF antes de definir as posições.")
+            return
+        if not self.signature_path or not self.signature_path.exists():
+            messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura antes de definir as posições.")
+            return
+        dimensions = self._read_dimensions()
+        if dimensions is None:
+            return
+        self.position_var.set("Manual por PDF")
+        ManualPositionEditor(self, self.pdfs, self.signature_path, *dimensions)
+
     def _sign_batch(
-        self, pdfs: list[Path], signature: Path, output_dir: Path, width_mm: float, margin_mm: float, position: str, pages: str
+        self, pdfs: list[Path], signature: Path, output_dir: Path, width_mm: float, margin_mm: float, position: str,
+        pages: str, manual_positions: dict[str, tuple[float, float]], manual_widths: dict[str, float],
     ) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         successes: list[str] = []
@@ -290,7 +346,11 @@ class AssinadorPMI(ctk.CTk):
                 self.event_queue.put(("progress", f"Assinando {index}/{len(pdfs)}: {pdf_path.name}"))
                 try:
                     destination = self._available_destination(pdf_path, output_dir)
-                    self._sign_pdf(pdf_path, signature, destination, width_mm, margin_mm, aspect_ratio, position, pages)
+                    signature_width = manual_widths.get(str(pdf_path.resolve()), width_mm) if position == "Manual por PDF" else width_mm
+                    self._sign_pdf(
+                        pdf_path, signature, destination, signature_width, margin_mm, aspect_ratio, position, pages,
+                        manual_positions.get(str(pdf_path.resolve())),
+                    )
                     successes.append(pdf_path.name)
                 except Exception as error:  # continua o lote mesmo se um PDF falhar
                     failures.append(f"{pdf_path.name}: {error}")
@@ -313,7 +373,7 @@ class AssinadorPMI(ctk.CTk):
     @staticmethod
     def _sign_pdf(
         source: Path, signature: Path, destination: Path, width_mm: float, margin_mm: float, aspect_ratio: float,
-        position: str, pages: str
+        position: str, pages: str, manual_position: tuple[float, float] | None = None,
     ) -> None:
         width = width_mm * MM_TO_POINTS
         height = width * aspect_ratio
@@ -329,14 +389,17 @@ class AssinadorPMI(ctk.CTk):
             }[pages]
             for page_number in page_numbers:
                 page = document[page_number]
-                rectangle = AssinadorPMI._signature_rectangle(page.rect, width, height, margin, position)
+                rectangle = AssinadorPMI._signature_rectangle(page.rect, width, height, margin, position, manual_position)
                 page.insert_image(rectangle, filename=str(signature), keep_proportion=True, overlay=True)
             document.save(destination, garbage=4, deflate=True)
         finally:
             document.close()
 
     @staticmethod
-    def _signature_rectangle(page: fitz.Rect, width: float, height: float, margin: float, position: str) -> fitz.Rect:
+    def _signature_rectangle(
+        page: fitz.Rect, width: float, height: float, margin: float, position: str,
+        manual_position: tuple[float, float] | None = None,
+    ) -> fitz.Rect:
         # Mantém a imagem inteiramente na página mesmo em PDFs pequenos.
         available_width = max(1, page.width - 2 * margin)
         available_height = max(1, page.height - 2 * margin)
@@ -345,7 +408,12 @@ class AssinadorPMI(ctk.CTk):
         height *= scale
         horizontal_margin = min(margin, max(0, (page.width - width) / 2))
         vertical_margin = min(margin, max(0, (page.height - height) / 2))
-        if position == "Inferior direita":
+        if position == "Manual por PDF" and manual_position is not None:
+            x0 = page.x0 + manual_position[0] * page.width
+            y0 = page.y0 + manual_position[1] * page.height
+            x0 = min(max(x0, page.x0), page.x1 - width)
+            y0 = min(max(y0, page.y0), page.y1 - height)
+        elif position == "Inferior direita":
             x0, y0 = page.x1 - horizontal_margin - width, page.y1 - vertical_margin - height
         elif position == "Inferior esquerda":
             x0, y0 = page.x0 + horizontal_margin, page.y1 - vertical_margin - height
@@ -379,6 +447,179 @@ class AssinadorPMI(ctk.CTk):
             messagebox.showwarning("Processamento concluído com avisos", message)
         else:
             messagebox.showinfo("Processamento concluído", message)
+
+
+class ManualPositionEditor(ctk.CTkToplevel):
+    """Prévia clicável que registra uma posição independente para cada PDF."""
+
+    def __init__(self, app: AssinadorPMI, pdfs: list[Path], signature: Path, width_mm: float, margin_mm: float) -> None:
+        super().__init__(app)
+        self.app = app
+        self.pdfs = pdfs
+        self.signature = signature
+        self.default_width_mm = width_mm
+        self.current_width_mm = width_mm
+        self.margin = margin_mm * MM_TO_POINTS
+        self.index = 0
+        self.page_rect: fitz.Rect | None = None
+        self.scale = 1.0
+        self.signature_width = 0.0
+        self.signature_height = 0.0
+        self.preview_image: ImageTk.PhotoImage | None = None
+        self.signature_image: ImageTk.PhotoImage | None = None
+
+        self.title("Definir posição manual da assinatura")
+        self.geometry("900x690")
+        self.minsize(760, 590)
+        self.configure(fg_color="#F3F6FA")
+        self.transient(app)
+        self.grab_set()
+
+        self.document_var = ctk.StringVar()
+        self.instruction_var = ctk.StringVar()
+        self.size_var = ctk.StringVar()
+        ctk.CTkLabel(
+            self,
+            text="Posição manual por PDF",
+            font=ctk.CTkFont(size=21, weight="bold"),
+            text_color="#153B82",
+        ).pack(pady=(18, 2))
+        ctk.CTkLabel(
+            self,
+            text="Clique na prévia para posicionar o centro da assinatura. A marca pode ser ajustada novamente a qualquer momento.",
+            text_color="#4B5B70",
+        ).pack(padx=20)
+        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 2))
+        ctk.CTkLabel(self, textvariable=self.instruction_var, text_color="#4B5B70", font=ctk.CTkFont(size=12)).pack()
+
+        size_row = ctk.CTkFrame(self, fg_color="transparent")
+        size_row.pack(fill="x", padx=105, pady=(11, 0))
+        ctk.CTkLabel(size_row, text="Tamanho da assinatura neste PDF:", text_color="#153B82").pack(side="left")
+        ctk.CTkLabel(size_row, textvariable=self.size_var, font=ctk.CTkFont(weight="bold"), text_color="#00A650").pack(side="right")
+        self.size_slider = ctk.CTkSlider(
+            self, from_=10, to=250, number_of_steps=240, command=self._change_size, progress_color="#00A650"
+        )
+        self.size_slider.pack(fill="x", padx=105, pady=(3, 5))
+
+        preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
+        preview_frame.pack(fill="both", expand=True, padx=24, pady=14)
+        self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0, cursor="crosshair")
+        self.canvas.pack(fill="both", expand=True, padx=8, pady=8)
+        self.canvas.bind("<Button-1>", self._choose_position)
+
+        controls = ctk.CTkFrame(self, fg_color="transparent")
+        controls.pack(fill="x", padx=24, pady=(0, 18))
+        self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=110, command=self._previous)
+        self.previous_button.pack(side="left")
+        self.next_button = ctk.CTkButton(controls, text="Próximo →", width=110, command=self._next)
+        self.next_button.pack(side="left", padx=8)
+        ctk.CTkButton(
+            controls, text="Salvar posições", fg_color="#00A650", hover_color="#008A42", command=self._save
+        ).pack(side="right")
+
+        self._render_current()
+
+    def _page_number(self, document: fitz.Document) -> int:
+        if self.app.pages_var.get() == "Primeira página":
+            return 0
+        # Em "Todas as páginas", a posição escolhida é reaproveitada em todas elas.
+        return document.page_count - 1
+
+    def _render_current(self) -> None:
+        pdf_path = self.pdfs[self.index]
+        self.document_var.set(f"Documento {self.index + 1} de {len(self.pdfs)}: {pdf_path.name}")
+        self.current_width_mm = self.app.manual_widths.get(str(pdf_path.resolve()), self.default_width_mm)
+        self.size_slider.set(min(250, max(10, self.current_width_mm)))
+        self.size_var.set(f"{self.current_width_mm:.0f} mm")
+        try:
+            document = fitz.open(pdf_path)
+            try:
+                if document.page_count == 0:
+                    raise ValueError("PDF sem páginas")
+                page = document[self._page_number(document)]
+                self.page_rect = page.rect
+                self.scale = min(1.35, 690 / page.rect.width, 410 / page.rect.height)
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(self.scale, self.scale), alpha=False)
+            finally:
+                document.close()
+            page_image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+            self.preview_image = ImageTk.PhotoImage(page_image)
+            self.canvas.configure(width=pixmap.width, height=pixmap.height)
+            self.canvas.delete("all")
+            self.canvas.create_image(0, 0, image=self.preview_image, anchor="nw")
+            self._draw_signature()
+            configured = str(pdf_path.resolve()) in self.app.manual_positions
+            self.instruction_var.set("Posição definida — clique para ajustar." if configured else "Posição pendente — clique sobre a prévia.")
+        except Exception as error:
+            self.canvas.delete("all")
+            self.canvas.configure(width=620, height=260)
+            self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
+            self.instruction_var.set("Escolha outro documento ou corrija o PDF antes de continuar.")
+        self.previous_button.configure(state="normal" if self.index else "disabled")
+        self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+
+    def _draw_signature(self) -> None:
+        if self.page_rect is None:
+            return
+        with Image.open(self.signature) as signature_image:
+            aspect_ratio = signature_image.height / signature_image.width
+            rect = AssinadorPMI._signature_rectangle(
+                self.page_rect, self.current_width_mm * MM_TO_POINTS,
+                self.current_width_mm * MM_TO_POINTS * aspect_ratio, self.margin,
+                "Manual por PDF", self.app.manual_positions.get(str(self.pdfs[self.index].resolve())),
+            )
+            self.signature_width = rect.width
+            self.signature_height = rect.height
+            display_width = max(1, round(rect.width * self.scale))
+            display_height = max(1, round(rect.height * self.scale))
+            preview = signature_image.convert("RGBA").resize((display_width, display_height), Image.Resampling.LANCZOS)
+        self.signature_image = ImageTk.PhotoImage(preview)
+        x = (rect.x0 - self.page_rect.x0) * self.scale
+        y = (rect.y0 - self.page_rect.y0) * self.scale
+        self.canvas.create_image(x, y, image=self.signature_image, anchor="nw")
+        self.canvas.create_rectangle(x, y, x + display_width, y + display_height, outline="#00A650", width=2)
+
+    def _change_size(self, value: float) -> None:
+        if self.page_rect is None:
+            return
+        self.current_width_mm = round(float(value))
+        self.app.manual_widths[str(self.pdfs[self.index].resolve())] = self.current_width_mm
+        self._render_current()
+
+    def _choose_position(self, event: object) -> None:
+        if self.page_rect is None:
+            return
+        # event é um tkinter.Event; a anotação ampla evita depender do tipo interno do Tk.
+        x = float(getattr(event, "x")) / self.scale + self.page_rect.x0 - self.signature_width / 2
+        y = float(getattr(event, "y")) / self.scale + self.page_rect.y0 - self.signature_height / 2
+        x = min(max(x, self.page_rect.x0), self.page_rect.x1 - self.signature_width)
+        y = min(max(y, self.page_rect.y0), self.page_rect.y1 - self.signature_height)
+        self.app.manual_positions[str(self.pdfs[self.index].resolve())] = (
+            (x - self.page_rect.x0) / self.page_rect.width,
+            (y - self.page_rect.y0) / self.page_rect.height,
+        )
+        self._render_current()
+
+    def _previous(self) -> None:
+        self.index -= 1
+        self._render_current()
+
+    def _next(self) -> None:
+        self.index += 1
+        self._render_current()
+
+    def _save(self) -> None:
+        missing = [path.name for path in self.pdfs if str(path.resolve()) not in self.app.manual_positions]
+        if missing:
+            messagebox.showwarning(
+                "Posições pendentes",
+                "Defina a posição para todos os PDFs antes de salvar:\n" + "\n".join(missing),
+                parent=self,
+            )
+            return
+        self.grab_release()
+        self.destroy()
+        self.app.status_var.set("Posições manuais salvas. Clique em ASSINAR PDFs para iniciar o lote.")
 
 
 if __name__ == "__main__":

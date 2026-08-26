@@ -80,7 +80,11 @@ python app.py
    **Selecionar pasta** para carregar todos os PDFs de uma pasta.
 2. Escolha a imagem da assinatura (PNG, JPG ou JPEG). PNG transparente costuma
    gerar o melhor resultado.
-3. Defina a página, o canto, a largura e a margem.
+3. Defina a página, o canto, a largura e a margem. Para escolher a posição em
+   cada documento individualmente, selecione **Manual por PDF** e clique em
+   **Definir posições manualmente**. Na prévia, clique no ponto em que a
+   assinatura deve ficar para cada PDF. Use o controle de **Tamanho da
+   assinatura neste PDF** para redimensioná-la individualmente.
 4. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
 
 Os documentos originais não são alterados: as versões assinadas ficam na pasta

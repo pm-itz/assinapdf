@@ -19,7 +19,7 @@ python -m pip install -r requirements.txt pyinstaller
 if errorlevel 1 goto :error
 
 echo [3/4] Gerando AssinaPDF.exe...
-pyinstaller --noconfirm --clean --windowed --name AssinaPDF --add-data "assets;assets" app.py
+pyinstaller --noconfirm --clean --windowed --name AssinaPDF --icon "assets\imperatriz.ico" --add-data "assets;assets" app.py
 if errorlevel 1 goto :error
 
 set "ISCC=%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe"
