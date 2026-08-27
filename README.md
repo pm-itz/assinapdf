@@ -48,29 +48,7 @@ O binário gerado é específico da arquitetura usada no build (por exemplo,
 x86_64 ou ARM64). O PyInstaller não gera o aplicativo Linux a partir do
 Windows; cada versão deve ser compilada em seu próprio sistema operacional.
 
-## Instalar no Windows
-
-Quem vai usar o sistema não precisa instalar Python, Inno Setup ou qualquer
-outra ferramenta. Basta acessar a página de [Releases no GitHub](https://github.com/pm-itz/assinapdf/releases), baixar
-`AssinaPDF-Setup.exe` e executá-lo.
-
-## Publicar uma nova versão Windows
-
-O GitHub Actions gera o instalador automaticamente em um computador Windows e
-o anexa à Release. Antes de publicar, altere `APP_VERSION` em `app.py` e
-`MyAppVersion` em `installer.iss` para a mesma versão. Depois, faça o commit,
-o push e envie uma tag:
-
-```bash
-git tag v1.0.5
-git push origin v1.0.5
-```
-
-Após a automação terminar, o arquivo `AssinaPDF-Setup.exe` estará anexado à
-Release. Em **Settings > Actions > General**, deixe **Workflow permissions** em
-**Read and write permissions** para permitir a criação da Release.
-
-## Gerar o instalador do Windows manualmente
+## Gerar o instalador do Windows
 
 Em um computador Windows, instale o [Python 3.10 ou superior](https://www.python.org/downloads/windows/)
 e o [Inno Setup 6](https://jrsoftware.org/isdl.php). Depois, dê duplo clique em
@@ -129,10 +107,6 @@ python app.py
 5. Na prévia manual, clique no local desejado e ajuste o controle de tamanho.
    Os controles ficam acima da página e a visualização é centralizada.
 6. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
-
-O aplicativo inicia maximizado. Use o seletor no canto superior direito para
-alternar entre os temas **Claro** e **Escuro**; a prévia do PDF permanece clara
-para não prejudicar a visualização do documento.
 
 Os documentos originais não são alterados: as versões assinadas ficam na pasta
 `pdfs_assinados`, ao lado dos PDFs, ou na pasta de saída escolhida.

@@ -2,7 +2,7 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-rem Usa o empacotamento padrão do PyInstaller para Tk/Tcl, como na versão 1.0.0.
+rem Gera o aplicativo Windows e, se o Inno Setup estiver instalado, o instalador.
 set "PYTHON_CMD=py -3"
 where py >nul 2>nul || set "PYTHON_CMD=python"
 
