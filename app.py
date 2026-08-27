@@ -31,7 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.1.2"
+APP_VERSION = "1.1.3"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -113,8 +113,8 @@ class AssinadorPMI(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Assinador de PDFs | Prefeitura de Imperatriz")
-        self.geometry("1060x720")
-        self.minsize(900, 620)
+        self.geometry("1160x800")
+        self.minsize(1000, 700)
         # A janela ainda não foi exibida pelo loop gráfico, portanto já nasce
         # maximizada sem precisar escondê-la ou mostrá-la novamente.
         self._maximize_window()
@@ -196,9 +196,6 @@ class AssinadorPMI(ctk.CTk):
             except (TypeError, ValueError):
                 pass
 
-        self.manual_enabled_var.set(bool(settings.get("manual_enabled", False)))
-        self.shared_manual_var.set(bool(settings.get("shared_manual", False)))
-
         signature_value = settings.get("signature_path")
         if isinstance(signature_value, str):
             signature = Path(signature_value)
@@ -219,8 +216,6 @@ class AssinadorPMI(ctk.CTk):
             "pages": self.pages_var.get(),
             "width_mm": self.width_var.get(),
             "margin_mm": self.margin_var.get(),
-            "manual_enabled": self.manual_enabled_var.get(),
-            "shared_manual": self.shared_manual_var.get(),
             "signature_path": str(self.signature_path) if self.signature_path else None,
             "output_dir": str(self.output_dir) if self.output_dir else None,
         }
@@ -897,7 +892,6 @@ class PositionPreview(ctk.CTkToplevel):
         self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54)
         self.zoom_label.pack(side="left", padx=6)
         ctk.CTkButton(zoom_controls, text="+", width=34, command=lambda: self._change_zoom(1)).pack(side="left")
-        ctk.CTkButton(zoom_controls, text="Ajustar à página", width=128, command=self._reset_zoom).pack(side="left", padx=(10, 0))
 
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
@@ -957,11 +951,6 @@ class PositionPreview(ctk.CTkToplevel):
     def _change_zoom(self, direction: int) -> None:
         self.zoom_factor = min(3.0, max(0.5, self.zoom_factor * (1.25 if direction > 0 else 0.8)))
         self.zoom_label.configure(text=f"{self.zoom_factor:.0%}")
-        self._render_current()
-
-    def _reset_zoom(self) -> None:
-        self.zoom_factor = 1.0
-        self.zoom_label.configure(text="100%")
         self._render_current()
 
 
@@ -1036,7 +1025,6 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54)
         self.zoom_label.pack(side="left", padx=6)
         ctk.CTkButton(zoom_controls, text="+", width=34, command=lambda: self._change_zoom(1)).pack(side="left")
-        ctk.CTkButton(zoom_controls, text="Ajustar à página", width=128, command=self._reset_zoom).pack(side="left", padx=(10, 0))
 
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
@@ -1186,11 +1174,6 @@ class ManualPositionEditor(ctk.CTkToplevel):
     def _change_zoom(self, direction: int) -> None:
         self.zoom_factor = min(3.0, max(0.5, self.zoom_factor * (1.25 if direction > 0 else 0.8)))
         self.zoom_label.configure(text=f"{self.zoom_factor:.0%}")
-        self._render_current()
-
-    def _reset_zoom(self) -> None:
-        self.zoom_factor = 1.0
-        self.zoom_label.configure(text="100%")
         self._render_current()
 
     def _save(self) -> None:
