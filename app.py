@@ -45,6 +45,16 @@ HELP_TEXT = "#6A778B"
 MANUAL_BACKGROUND = "#EDF3FC"
 
 
+def _apply_window_icon(window: ctk.CTk | ctk.CTkToplevel) -> None:
+    """Aplica o ícone institucional em janelas principais e auxiliares."""
+    icon_path = BUNDLE_DIR / "assets" / "imperatriz.ico"
+    if icon_path.exists():
+        try:
+            window.iconbitmap(str(icon_path))
+        except Exception:
+            pass
+
+
 class UpdateProgressDialog(ctk.CTkToplevel):
     """Janela modal que acompanha o download da atualização."""
 
@@ -249,12 +259,7 @@ class AssinadorPMI(ctk.CTk):
 
     def _set_window_icon(self) -> None:
         """Usa a marca institucional tanto no código-fonte quanto no .exe."""
-        icon_path = BUNDLE_DIR / "assets" / "imperatriz.ico"
-        if icon_path.exists():
-            try:
-                self.iconbitmap(str(icon_path))
-            except Exception:
-                pass
+        _apply_window_icon(self)
 
     def _build_interface(self) -> None:
         header = ctk.CTkFrame(self, height=108, corner_radius=0, fg_color="#153B82")
@@ -863,6 +868,7 @@ class PositionPreview(ctk.CTkToplevel):
         self.signature_image: ImageTk.PhotoImage | None = None
 
         self.title("Pré-visualização da assinatura")
+        _apply_window_icon(self)
         self.geometry("1120x850")
         self.minsize(900, 720)
         self.configure(fg_color=APP_BACKGROUND)
@@ -877,26 +883,41 @@ class PositionPreview(ctk.CTkToplevel):
         ).pack(padx=20)
         ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 4))
 
-        controls = ctk.CTkFrame(self, fg_color="transparent")
-        controls.pack(fill="x", padx=24, pady=(0, 8))
-        self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=110, command=self._previous)
+        toolbar = ctk.CTkFrame(self, height=54, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
+        toolbar.pack(fill="x", padx=24, pady=(0, 10))
+        toolbar.pack_propagate(False)
+        navigation = ctk.CTkFrame(toolbar, fg_color="transparent")
+        navigation.pack(side="left", padx=10, pady=8)
+        self.previous_button = ctk.CTkButton(
+            navigation, text="← Anterior", width=104, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._previous,
+        )
         self.previous_button.pack(side="left")
-        self.next_button = ctk.CTkButton(controls, text="Próximo →", width=110, command=self._next)
-        self.next_button.pack(side="left", padx=8)
-        ctk.CTkButton(controls, text="Fechar", command=self.destroy).pack(side="right")
+        self.next_button = ctk.CTkButton(
+            navigation, text="Próximo →", width=104, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._next,
+        )
+        self.next_button.pack(side="left", padx=(6, 0))
 
-        zoom_controls = ctk.CTkFrame(self, fg_color="transparent")
-        zoom_controls.pack(pady=(0, 8))
+        zoom_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
+        zoom_controls.pack(side="left", expand=True, pady=8)
         ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(zoom_controls, text="−", width=34, command=lambda: self._change_zoom(-1)).pack(side="left")
-        self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54)
+        ctk.CTkButton(zoom_controls, text="−", width=34, height=32, command=lambda: self._change_zoom(-1)).pack(side="left")
+        self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54, text_color=PRIMARY_TEXT)
         self.zoom_label.pack(side="left", padx=6)
-        ctk.CTkButton(zoom_controls, text="+", width=34, command=lambda: self._change_zoom(1)).pack(side="left")
+        ctk.CTkButton(zoom_controls, text="+", width=34, height=32, command=lambda: self._change_zoom(1)).pack(side="left")
+        ctk.CTkButton(
+            toolbar, text="Fechar", width=82, height=34, fg_color="transparent", text_color=PRIMARY_TEXT,
+            border_width=1, border_color=PRIMARY_TEXT, command=self.destroy,
+        ).pack(side="right", padx=12, pady=8)
 
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
         self.canvas = _create_scrollable_pdf_canvas(preview_frame)
         self._render_current()
+        # A primeira renderização acontece antes do canvas ocupar seu tamanho
+        # definitivo. Renderiza novamente após o layout para centralizar a página.
+        self.after_idle(self._render_current)
 
     def _page_number(self, document: fitz.Document) -> int:
         return 0 if self.app.pages_var.get() == "Primeira página" else document.page_count - 1
@@ -982,6 +1003,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.signature_image: ImageTk.PhotoImage | None = None
 
         self.title("Ajustar posição manual da assinatura")
+        _apply_window_icon(self)
         self.geometry("1120x850")
         self.minsize(900, 720)
         self.configure(fg_color=APP_BACKGROUND)
@@ -1001,30 +1023,39 @@ class ManualPositionEditor(ctk.CTkToplevel):
         )
         self.size_slider.pack(fill="x", padx=125, pady=(3, 5))
 
-        controls = ctk.CTkFrame(self, fg_color="transparent")
-        controls.pack(fill="x", padx=24, pady=(5, 8))
+        toolbar = ctk.CTkFrame(self, height=54, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
+        toolbar.pack(fill="x", padx=24, pady=(5, 8))
+        toolbar.pack_propagate(False)
         self.shared_checkbox = ctk.CTkCheckBox(
-            controls,
+            toolbar,
             text="Usar a mesma posição e tamanho em todos os PDFs",
             variable=self.app.shared_manual_var,
             command=self._toggle_shared_mode,
             text_color=PRIMARY_TEXT,
         )
-        self.shared_checkbox.pack(side="left")
-        self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=105, command=self._previous)
-        self.next_button = ctk.CTkButton(controls, text="Próximo →", width=105, command=self._next)
+        self.shared_checkbox.pack(side="left", padx=12, pady=8)
+        self.navigation_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
+        self.navigation_controls.pack(side="left", padx=(2, 8), pady=8)
+        self.previous_button = ctk.CTkButton(
+            self.navigation_controls, text="← Anterior", width=96, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._previous,
+        )
+        self.next_button = ctk.CTkButton(
+            self.navigation_controls, text="Próximo →", width=96, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._next,
+        )
         ctk.CTkButton(
-            controls, text="Salvar posição", fg_color="#00A650", hover_color="#008A42", command=self._save
-        ).pack(side="right")
-        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(0, 5))
+            toolbar, text="Salvar posição", width=118, height=34, fg_color="#00A650", hover_color="#008A42", command=self._save
+        ).pack(side="right", padx=12, pady=8)
 
-        zoom_controls = ctk.CTkFrame(self, fg_color="transparent")
-        zoom_controls.pack(pady=(0, 8))
+        zoom_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
+        zoom_controls.pack(side="left", expand=True, pady=8)
         ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
-        ctk.CTkButton(zoom_controls, text="−", width=34, command=lambda: self._change_zoom(-1)).pack(side="left")
-        self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54)
+        ctk.CTkButton(zoom_controls, text="−", width=34, height=32, command=lambda: self._change_zoom(-1)).pack(side="left")
+        self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54, text_color=PRIMARY_TEXT)
         self.zoom_label.pack(side="left", padx=6)
-        ctk.CTkButton(zoom_controls, text="+", width=34, command=lambda: self._change_zoom(1)).pack(side="left")
+        ctk.CTkButton(zoom_controls, text="+", width=34, height=32, command=lambda: self._change_zoom(1)).pack(side="left")
+        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(0, 5))
 
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
@@ -1033,6 +1064,8 @@ class ManualPositionEditor(ctk.CTkToplevel):
 
         self._sync_shared_controls()
         self._render_current()
+        # Garante a centralização já na abertura, sem exigir alteração de zoom.
+        self.after_idle(self._render_current)
 
     def _page_number(self, document: fitz.Document) -> int:
         if self.app.pages_var.get() == "Primeira página":
@@ -1080,7 +1113,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
             self.previous_button.pack_forget()
             self.next_button.pack_forget()
         else:
-            self.previous_button.pack(side="left", padx=(12, 0))
+            self.previous_button.pack(side="left")
             self.next_button.pack(side="left", padx=8)
 
     def _toggle_shared_mode(self) -> None:
