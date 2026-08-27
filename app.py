@@ -426,8 +426,8 @@ class AssinadorPMI(ctk.CTk):
         ctk.CTkButton(
             self.manual_controls,
             text="Abrir prévia e ajustar",
-            fg_color="#5C6B80",
-            hover_color="#475568",
+            fg_color="#153B82",
+            hover_color="#0D2F6C",
             command=self._open_manual_editor,
         ).pack(anchor="w", pady=(8, 3))
         self.manual_controls.pack_forget()
