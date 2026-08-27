@@ -31,7 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.1.3"
+APP_VERSION = "1.1.4"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -41,7 +41,6 @@ CARD_BACKGROUND = "#FFFFFF"
 CARD_BORDER = "#D9E1EC"
 PRIMARY_TEXT = "#153B82"
 SECONDARY_TEXT = "#4B5B70"
-HELP_TEXT = "#6A778B"
 MANUAL_BACKGROUND = "#EDF3FC"
 PREVIEW_BACKGROUND = "#DCE5F0"
 
@@ -124,11 +123,8 @@ class AssinadorPMI(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Assinador de PDFs | Prefeitura de Imperatriz")
-        self.geometry("1160x800")
         self.minsize(1000, 700)
-        # A janela ainda não foi exibida pelo loop gráfico, portanto já nasce
-        # maximizada sem precisar escondê-la ou mostrá-la novamente.
-        self._maximize_window()
+        self._center_window()
         self.configure(fg_color=APP_BACKGROUND)
 
         self.pdfs: list[Path] = []
@@ -164,15 +160,15 @@ class AssinadorPMI(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._close_application)
         self.after(120, self._process_events)
 
-    def _maximize_window(self) -> None:
-        """Inicia ocupando toda a área útil da tela, com a barra de título visível."""
-        try:
-            if sys.platform.startswith("win"):
-                self.state("zoomed")
-            else:
-                self.attributes("-zoomed", True)
-        except Exception:
-            pass
+    def _center_window(self) -> None:
+        """Abre em tamanho confortável e centralizada na área útil do monitor."""
+        screen_width = self.winfo_screenwidth()
+        screen_height = self.winfo_screenheight()
+        width = min(1160, max(1000, screen_width - 80))
+        height = min(800, max(700, screen_height - 80))
+        x = max(0, (screen_width - width) // 2)
+        y = max(0, (screen_height - height) // 2)
+        self.geometry(f"{width}x{height}+{x}+{y}")
 
     @staticmethod
     def _get_settings_path() -> Path:
@@ -432,11 +428,6 @@ class AssinadorPMI(ctk.CTk):
             command=self._open_manual_editor,
         ).pack(anchor="w", pady=(8, 3))
         self.manual_controls.pack_forget()
-        ctk.CTkLabel(
-            parent,
-            text="A assinatura é inserida como imagem visível. Para assinaturas certificadas, use um certificado digital apropriado.",
-            text_color=HELP_TEXT, justify="left", wraplength=330, font=ctk.CTkFont(size=11),
-        ).pack(anchor="w", padx=20, pady=(3, 17))
 
     @staticmethod
     def _option_field(parent: ctk.CTkFrame, label: str, variable: ctk.StringVar, values: list[str], row: int, column: int) -> None:
