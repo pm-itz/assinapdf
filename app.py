@@ -1012,12 +1012,10 @@ class ManualPositionEditor(ctk.CTkToplevel):
 
         self.document_var = ctk.StringVar()
         self.instruction_var = ctk.StringVar()
-        self.size_var = ctk.StringVar()
 
         size_row = ctk.CTkFrame(self, fg_color="transparent")
         size_row.pack(fill="x", padx=105, pady=(20, 0))
         ctk.CTkLabel(size_row, text="Tamanho da assinatura:", text_color=PRIMARY_TEXT).pack(side="left")
-        ctk.CTkLabel(size_row, textvariable=self.size_var, font=ctk.CTkFont(weight="bold"), text_color="#00A650").pack(side="right")
         self.size_slider = ctk.CTkSlider(
             self, from_=10, to=250, number_of_steps=240, command=self._change_size, progress_color="#00A650"
         )
@@ -1044,12 +1042,13 @@ class ManualPositionEditor(ctk.CTkToplevel):
             self.navigation_controls, text="Próximo →", width=96, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
             text_color=PRIMARY_TEXT, command=self._next,
         )
-        ctk.CTkButton(
-            toolbar, text="Salvar posição", width=118, height=34, fg_color="#00A650", hover_color="#008A42", command=self._save
-        ).pack(side="right", padx=12, pady=8)
+        self.save_button = ctk.CTkButton(
+            self.navigation_controls, text="Salvar posição", width=118, height=34, fg_color="#00A650",
+            hover_color="#008A42", command=self._save,
+        )
 
         zoom_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
-        zoom_controls.pack(side="left", expand=True, pady=8)
+        zoom_controls.pack(side="right", padx=12, pady=8)
         ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
         ctk.CTkButton(zoom_controls, text="−", width=34, height=32, command=lambda: self._change_zoom(-1)).pack(side="left")
         self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54, text_color=PRIMARY_TEXT)
@@ -1079,7 +1078,6 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.document_var.set(f"{label}: {pdf_path.name}")
         self.current_width_mm = self._get_width(pdf_path)
         self.size_slider.set(min(250, max(10, self.current_width_mm)))
-        self.size_var.set(f"{self.current_width_mm:.0f} mm")
         try:
             document = fitz.open(pdf_path)
             try:
@@ -1109,12 +1107,15 @@ class ManualPositionEditor(ctk.CTkToplevel):
             self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
 
     def _sync_shared_controls(self) -> None:
+        self.previous_button.pack_forget()
+        self.next_button.pack_forget()
+        self.save_button.pack_forget()
         if self.shared:
-            self.previous_button.pack_forget()
-            self.next_button.pack_forget()
+            self.save_button.pack(side="left")
         else:
             self.previous_button.pack(side="left")
             self.next_button.pack(side="left", padx=8)
+            self.save_button.pack(side="left", padx=(12, 0))
 
     def _toggle_shared_mode(self) -> None:
         shared = self.app.shared_manual_var.get()
