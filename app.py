@@ -31,7 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -43,6 +43,68 @@ PRIMARY_TEXT = "#153B82"
 SECONDARY_TEXT = "#4B5B70"
 HELP_TEXT = "#6A778B"
 MANUAL_BACKGROUND = "#EDF3FC"
+
+
+class UpdateProgressDialog(ctk.CTkToplevel):
+    """Janela modal que acompanha o download da atualização."""
+
+    def __init__(self, parent: ctk.CTk, version: str) -> None:
+        super().__init__(parent)
+        self.parent = parent
+        self.title("Atualizando AssinaPDF")
+        self.geometry("460x210")
+        self.resizable(False, False)
+        self.configure(fg_color=APP_BACKGROUND)
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        ctk.CTkLabel(
+            self,
+            text=f"Baixando atualização {version}",
+            font=ctk.CTkFont(size=19, weight="bold"),
+            text_color=PRIMARY_TEXT,
+        ).pack(padx=28, pady=(25, 7))
+        self.message = ctk.CTkLabel(
+            self,
+            text="Não feche o aplicativo enquanto a atualização é baixada.",
+            text_color=SECONDARY_TEXT,
+            wraplength=390,
+            justify="center",
+        )
+        self.message.pack(padx=28)
+        self.progress = ctk.CTkProgressBar(self, height=16, progress_color="#00A650")
+        self.progress.pack(fill="x", padx=38, pady=(22, 8))
+        self.progress.set(0)
+        self.percentage = ctk.CTkLabel(self, text="0%", text_color=SECONDARY_TEXT)
+        self.percentage.pack()
+
+        self.grab_set()
+        self.lift()
+        self.after(10, self._center_on_parent)
+
+    def _center_on_parent(self) -> None:
+        self.update_idletasks()
+        x = self.parent.winfo_rootx() + max(0, (self.parent.winfo_width() - self.winfo_width()) // 2)
+        y = self.parent.winfo_rooty() + max(0, (self.parent.winfo_height() - self.winfo_height()) // 2)
+        self.geometry(f"+{x}+{y}")
+
+    def set_progress(self, downloaded: int, total: int) -> None:
+        if total > 0:
+            fraction = min(1.0, downloaded / total)
+            self.progress.stop()
+            self.progress.set(fraction)
+            self.percentage.configure(text=f"{fraction:.0%}")
+        else:
+            self.progress.configure(mode="indeterminate")
+            self.progress.start()
+            self.percentage.configure(text="Baixando...")
+
+    def show_installing(self) -> None:
+        self.progress.stop()
+        self.progress.configure(mode="determinate")
+        self.progress.set(1)
+        self.percentage.configure(text="Download concluído")
+        self.message.configure(text="Iniciando a instalação. O AssinaPDF será fechado em instantes.")
 
 
 class AssinadorPMI(ctk.CTk):
@@ -59,7 +121,6 @@ class AssinadorPMI(ctk.CTk):
         self.configure(fg_color=APP_BACKGROUND)
 
         self.pdfs: list[Path] = []
-        self.document_dir: Path | None = None
         self.signature_path: Path | None = None
         self.output_dir: Path | None = None
         self.manual_positions: dict[str, tuple[float, float]] = {}
@@ -67,8 +128,10 @@ class AssinadorPMI(ctk.CTk):
         self.shared_manual_position: tuple[float, float] | None = None
         self.shared_manual_width: float | None = None
         self.is_processing = False
+        self.is_updating = False
         self.event_queue: queue.Queue[tuple[str, object]] = queue.Queue()
         self.logo_image: ctk.CTkImage | None = None
+        self.update_dialog: UpdateProgressDialog | None = None
 
         self.position_var = ctk.StringVar(value="Inferior direita")
         self.manual_enabled_var = ctk.BooleanVar(value=False)
@@ -84,7 +147,6 @@ class AssinadorPMI(ctk.CTk):
         self._settings_path = self._get_settings_path()
         self._load_settings()
         self._build_interface()
-        self._restore_document_folder()
         self._toggle_manual_controls()
         self._set_window_icon()
         self._build_menu()
@@ -151,12 +213,6 @@ class AssinadorPMI(ctk.CTk):
                 self.output_dir = output
                 self.output_label_var.set(str(output))
 
-        document_value = settings.get("document_dir")
-        if isinstance(document_value, str):
-            document_dir = Path(document_value)
-            if document_dir.is_dir():
-                self.document_dir = document_dir
-
     def _save_settings(self) -> None:
         settings = {
             "position": self.position_var.get(),
@@ -167,7 +223,6 @@ class AssinadorPMI(ctk.CTk):
             "shared_manual": self.shared_manual_var.get(),
             "signature_path": str(self.signature_path) if self.signature_path else None,
             "output_dir": str(self.output_dir) if self.output_dir else None,
-            "document_dir": str(self.document_dir) if self.document_dir else None,
         }
         try:
             self._settings_path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,16 +231,12 @@ class AssinadorPMI(ctk.CTk):
             pass
 
     def _close_application(self) -> None:
+        if self.is_updating:
+            if self.update_dialog and self.update_dialog.winfo_exists():
+                self.update_dialog.lift()
+            return
         self._save_settings()
         self.destroy()
-
-    def _restore_document_folder(self) -> None:
-        """Recupera somente a lista de PDFs da última pasta, sem copiar arquivos."""
-        if self.document_dir and self.document_dir.is_dir():
-            self._set_pdfs(
-                sorted(self.document_dir.glob("*.pdf"), key=lambda item: item.name.lower()),
-                document_dir=self.document_dir,
-            )
 
     def _build_menu(self) -> None:
         menu_bar = Menu(self)
@@ -402,21 +453,15 @@ class AssinadorPMI(ctk.CTk):
 
     def _choose_pdfs(self) -> None:
         files = filedialog.askopenfilenames(title="Selecione os PDFs", filetypes=[("Arquivos PDF", "*.pdf")])
-        paths = [Path(file) for file in files]
-        folders = {path.parent.resolve() for path in paths}
-        self._set_pdfs(paths, document_dir=folders.pop() if len(folders) == 1 else None)
-        self._save_settings()
+        self._set_pdfs([Path(file) for file in files])
 
     def _choose_folder(self) -> None:
         folder = filedialog.askdirectory(title="Selecione a pasta com PDFs")
         if folder:
-            document_dir = Path(folder).resolve()
-            self._set_pdfs(sorted(document_dir.glob("*.pdf"), key=lambda item: item.name.lower()), document_dir=document_dir)
-            self._save_settings()
+            self._set_pdfs(sorted(Path(folder).glob("*.pdf"), key=lambda item: item.name.lower()))
 
-    def _set_pdfs(self, paths: Iterable[Path], document_dir: Path | None = None) -> None:
+    def _set_pdfs(self, paths: Iterable[Path]) -> None:
         self.pdfs = list(dict.fromkeys(path.resolve() for path in paths if path.suffix.lower() == ".pdf"))
-        self.document_dir = document_dir.resolve() if document_dir and document_dir.is_dir() else None
         selected = {str(path) for path in self.pdfs}
         self.manual_positions = {path: point for path, point in self.manual_positions.items() if path in selected}
         self.manual_widths = {path: width for path, width in self.manual_widths.items() if path in selected}
@@ -426,9 +471,7 @@ class AssinadorPMI(ctk.CTk):
 
     def _clear_pdfs(self) -> None:
         self.pdfs.clear()
-        self.document_dir = None
         self._update_pdf_list()
-        self._save_settings()
 
     def _update_pdf_list(self) -> None:
         self.pdf_count_var.set(f"{len(self.pdfs)} PDF(s) selecionado(s)")
@@ -653,6 +696,8 @@ class AssinadorPMI(ctk.CTk):
         return tuple((numbers + [0, 0, 0, 0])[:4])
 
     def _check_for_updates(self) -> None:
+        if self.is_updating:
+            return
         if not sys.platform.startswith("win"):
             messagebox.showinfo(
                 "Atualizações",
@@ -693,6 +738,8 @@ class AssinadorPMI(ctk.CTk):
             parent=self,
         ):
             self.status_var.set("Baixando atualização...")
+            self.is_updating = True
+            self.update_dialog = UpdateProgressDialog(self, version)
             threading.Thread(target=self._download_update, args=(version, download_url), daemon=True).start()
 
     def _download_update(self, version: str, download_url: str) -> None:
@@ -700,20 +747,41 @@ class AssinadorPMI(ctk.CTk):
             destination = Path(tempfile.gettempdir()) / f"AssinaPDF-Setup-{version}.exe"
             request = Request(download_url, headers={"User-Agent": "AssinaPDF"})
             with urlopen(request, timeout=60) as response, destination.open("wb") as installer:
+                try:
+                    total = int(response.headers.get("Content-Length", "0"))
+                except ValueError:
+                    total = 0
+                downloaded = 0
                 while block := response.read(1024 * 256):
                     installer.write(block)
+                    downloaded += len(block)
+                    self.event_queue.put(("update_progress", (downloaded, total)))
             self.event_queue.put(("update_downloaded", destination))
         except (OSError, URLError) as error:
             self.event_queue.put(("update_error", str(error)))
 
     def _install_downloaded_update(self, installer: Path) -> None:
         try:
+            if self.update_dialog and self.update_dialog.winfo_exists():
+                self.update_dialog.show_installing()
             # O Inno Setup solicita elevação se necessária e substitui a versão instalada.
             subprocess.Popen([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS"])
             self.status_var.set("Instalador iniciado. O AssinaPDF será fechado para concluir a atualização.")
-            self.after(500, self.destroy)
+            self.after(900, self.destroy)
         except OSError as error:
+            self._close_update_dialog()
             messagebox.showerror("Atualização", f"Não foi possível iniciar o instalador:\n{error}", parent=self)
+
+    def _update_download_progress(self, downloaded: int, total: int) -> None:
+        if self.update_dialog and self.update_dialog.winfo_exists():
+            self.update_dialog.set_progress(downloaded, total)
+
+    def _close_update_dialog(self) -> None:
+        self.is_updating = False
+        if self.update_dialog and self.update_dialog.winfo_exists():
+            self.update_dialog.grab_release()
+            self.update_dialog.destroy()
+        self.update_dialog = None
 
     def _process_events(self) -> None:
         try:
@@ -728,9 +796,12 @@ class AssinadorPMI(ctk.CTk):
                     messagebox.showinfo("Atualizações", "Você já está usando a versão mais recente.", parent=self)
                 elif event == "update_available":
                     self._offer_update(*data)  # type: ignore[arg-type]
+                elif event == "update_progress":
+                    self._update_download_progress(*data)  # type: ignore[arg-type]
                 elif event == "update_downloaded":
                     self._install_downloaded_update(data)  # type: ignore[arg-type]
                 elif event == "update_error":
+                    self._close_update_dialog()
                     self.status_var.set("Não foi possível verificar atualizações.")
                     messagebox.showerror("Atualizações", f"Não foi possível concluir a atualização:\n{data}", parent=self)
         except queue.Empty:
