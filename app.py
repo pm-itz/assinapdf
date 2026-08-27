@@ -7,6 +7,7 @@ gera uma assinatura digital criptográfica/certificada (ICP-Brasil).
 from __future__ import annotations
 
 import json
+import os
 import queue
 import re
 import subprocess
@@ -30,10 +31,18 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
+
+APP_BACKGROUND = "#F3F6FA"
+CARD_BACKGROUND = "#FFFFFF"
+CARD_BORDER = "#D9E1EC"
+PRIMARY_TEXT = "#153B82"
+SECONDARY_TEXT = "#4B5B70"
+HELP_TEXT = "#6A778B"
+MANUAL_BACKGROUND = "#EDF3FC"
 
 
 class AssinadorPMI(ctk.CTk):
@@ -42,11 +51,15 @@ class AssinadorPMI(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Assinador de PDFs | Prefeitura de Imperatriz")
-        self.geometry("1060x760")
-        self.minsize(920, 650)
-        self.configure(fg_color="#F3F6FA")
+        self.geometry("1060x720")
+        self.minsize(900, 620)
+        # A janela ainda não foi exibida pelo loop gráfico, portanto já nasce
+        # maximizada sem precisar escondê-la ou mostrá-la novamente.
+        self._maximize_window()
+        self.configure(fg_color=APP_BACKGROUND)
 
         self.pdfs: list[Path] = []
+        self.document_dir: Path | None = None
         self.signature_path: Path | None = None
         self.output_dir: Path | None = None
         self.manual_positions: dict[str, tuple[float, float]] = {}
@@ -59,7 +72,7 @@ class AssinadorPMI(ctk.CTk):
 
         self.position_var = ctk.StringVar(value="Inferior direita")
         self.manual_enabled_var = ctk.BooleanVar(value=False)
-        self.shared_manual_var = ctk.BooleanVar(value=True)
+        self.shared_manual_var = ctk.BooleanVar(value=False)
         self.pages_var = ctk.StringVar(value="Última página")
         self.width_var = ctk.StringVar(value="45")
         self.margin_var = ctk.StringVar(value="12")
@@ -68,10 +81,111 @@ class AssinadorPMI(ctk.CTk):
         self.signature_label_var = ctk.StringVar(value="Nenhuma imagem selecionada")
         self.output_label_var = ctk.StringVar(value="Será criada junto aos PDFs")
 
+        self._settings_path = self._get_settings_path()
+        self._load_settings()
         self._build_interface()
+        self._restore_document_folder()
+        self._toggle_manual_controls()
         self._set_window_icon()
         self._build_menu()
+        self.protocol("WM_DELETE_WINDOW", self._close_application)
         self.after(120, self._process_events)
+
+    def _maximize_window(self) -> None:
+        """Inicia ocupando toda a área útil da tela, com a barra de título visível."""
+        try:
+            if sys.platform.startswith("win"):
+                self.state("zoomed")
+            else:
+                self.attributes("-zoomed", True)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _get_settings_path() -> Path:
+        """Retorna o local apropriado para preferências locais do usuário."""
+        if sys.platform.startswith("win"):
+            base = Path(os.getenv("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+        else:
+            base = Path(os.getenv("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+        return base / "AssinaPDF" / "configuracoes.json"
+
+    def _load_settings(self) -> None:
+        """Restaura preferências válidas, sem impedir a abertura se o arquivo falhar."""
+        try:
+            settings = json.loads(self._settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(settings, dict):
+            return
+
+        position = settings.get("position")
+        if position in {"Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro"}:
+            self.position_var.set(position)
+        pages = settings.get("pages")
+        if pages in {"Última página", "Primeira página", "Todas as páginas"}:
+            self.pages_var.set(pages)
+
+        for key, variable, minimum in (("width_mm", self.width_var, 0.01), ("margin_mm", self.margin_var, 0.0)):
+            try:
+                value = float(settings.get(key))
+                if value >= minimum:
+                    variable.set(f"{value:g}")
+            except (TypeError, ValueError):
+                pass
+
+        self.manual_enabled_var.set(bool(settings.get("manual_enabled", False)))
+        self.shared_manual_var.set(bool(settings.get("shared_manual", False)))
+
+        signature_value = settings.get("signature_path")
+        if isinstance(signature_value, str):
+            signature = Path(signature_value)
+            if signature.is_file():
+                self.signature_path = signature
+                self.signature_label_var.set(signature.name)
+
+        output_value = settings.get("output_dir")
+        if isinstance(output_value, str):
+            output = Path(output_value)
+            if output.is_dir():
+                self.output_dir = output
+                self.output_label_var.set(str(output))
+
+        document_value = settings.get("document_dir")
+        if isinstance(document_value, str):
+            document_dir = Path(document_value)
+            if document_dir.is_dir():
+                self.document_dir = document_dir
+
+    def _save_settings(self) -> None:
+        settings = {
+            "position": self.position_var.get(),
+            "pages": self.pages_var.get(),
+            "width_mm": self.width_var.get(),
+            "margin_mm": self.margin_var.get(),
+            "manual_enabled": self.manual_enabled_var.get(),
+            "shared_manual": self.shared_manual_var.get(),
+            "signature_path": str(self.signature_path) if self.signature_path else None,
+            "output_dir": str(self.output_dir) if self.output_dir else None,
+            "document_dir": str(self.document_dir) if self.document_dir else None,
+        }
+        try:
+            self._settings_path.parent.mkdir(parents=True, exist_ok=True)
+            self._settings_path.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _close_application(self) -> None:
+        self._save_settings()
+        self.destroy()
+
+    def _restore_document_folder(self) -> None:
+        """Recupera somente a lista de PDFs da última pasta, sem copiar arquivos."""
+        if self.document_dir and self.document_dir.is_dir():
+            self._set_pdfs(
+                sorted(self.document_dir.glob("*.pdf"), key=lambda item: item.name.lower()),
+                document_dir=self.document_dir,
+            )
 
     def _build_menu(self) -> None:
         menu_bar = Menu(self)
@@ -97,13 +211,13 @@ class AssinadorPMI(ctk.CTk):
                 pass
 
     def _build_interface(self) -> None:
-        header = ctk.CTkFrame(self, height=128, corner_radius=0, fg_color="#153B82")
+        header = ctk.CTkFrame(self, height=108, corner_radius=0, fg_color="#153B82")
         header.pack(fill="x")
         header.pack_propagate(False)
 
         self._add_logo(header)
         title_frame = ctk.CTkFrame(header, fg_color="transparent")
-        title_frame.pack(side="left", fill="both", expand=True, padx=(4, 30), pady=22)
+        title_frame.pack(side="left", fill="both", expand=True, padx=(4, 30), pady=15)
         ctk.CTkLabel(
             title_frame,
             text="ASSINADOR DE PDFs",
@@ -116,32 +230,13 @@ class AssinadorPMI(ctk.CTk):
             font=ctk.CTkFont(size=15),
             text_color="#DCE7FF",
         ).pack(anchor="w", pady=(3, 0))
-
-        main = ctk.CTkFrame(self, fg_color="transparent")
-        main.pack(fill="both", expand=True, padx=28, pady=24)
-        main.grid_columnconfigure(0, weight=3)
-        main.grid_columnconfigure(1, weight=2)
-        main.grid_rowconfigure(1, weight=1)
-
-        documents = self._card(main, "1. Documentos PDF")
-        documents.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 12))
-        self._build_document_section(documents)
-
-        signature = self._card(main, "2. Imagem da assinatura")
-        signature.grid(row=0, column=1, sticky="new", padx=(12, 0), pady=(0, 12))
-        self._build_signature_section(signature)
-
-        settings = self._card(main, "3. Posicionamento")
-        settings.grid(row=1, column=1, sticky="new", padx=(12, 0))
-        self._build_settings_section(settings)
-
         footer = ctk.CTkFrame(self, fg_color="transparent")
-        footer.pack(fill="x", padx=28, pady=(0, 22))
+        footer.pack(side="bottom", fill="x", padx=28, pady=(0, 12))
         ctk.CTkLabel(
             footer,
             textvariable=self.status_var,
             font=ctk.CTkFont(size=13),
-            text_color="#4B5B70",
+            text_color=SECONDARY_TEXT,
         ).pack(side="left")
         self.sign_button = ctk.CTkButton(
             footer,
@@ -153,6 +248,24 @@ class AssinadorPMI(ctk.CTk):
             command=self._start_signing,
         )
         self.sign_button.pack(side="right")
+
+        main = ctk.CTkFrame(self, fg_color="transparent")
+        main.pack(fill="both", expand=True, padx=28, pady=12)
+        main.grid_columnconfigure(0, weight=3)
+        main.grid_columnconfigure(1, weight=2)
+        main.grid_rowconfigure(1, weight=1)
+
+        documents = self._card(main, "1. Documentos PDF")
+        documents.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 12))
+        self._build_document_section(documents)
+
+        signature = self._card(main, "2. Imagem da assinatura")
+        signature.grid(row=0, column=1, sticky="new", padx=(12, 0), pady=(0, 10))
+        self._build_signature_section(signature)
+
+        settings = self._card(main, "3. Posicionamento")
+        settings.grid(row=1, column=1, sticky="new", padx=(12, 0))
+        self._build_settings_section(settings)
 
     def _add_logo(self, parent: ctk.CTkFrame) -> None:
         logo_path = BUNDLE_DIR / "assets" / "logo_pmi_branca_3.png"
@@ -172,9 +285,9 @@ class AssinadorPMI(ctk.CTk):
 
     @staticmethod
     def _card(parent: ctk.CTkFrame, title: str) -> ctk.CTkFrame:
-        card = ctk.CTkFrame(parent, corner_radius=12, fg_color="white", border_width=1, border_color="#D9E1EC")
+        card = ctk.CTkFrame(parent, corner_radius=12, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
         ctk.CTkLabel(
-            card, text=title, font=ctk.CTkFont(size=16, weight="bold"), text_color="#153B82"
+            card, text=title, font=ctk.CTkFont(size=16, weight="bold"), text_color=PRIMARY_TEXT
         ).pack(anchor="w", padx=20, pady=(17, 10))
         return card
 
@@ -186,21 +299,21 @@ class AssinadorPMI(ctk.CTk):
             buttons, text="Selecionar pasta", fg_color="#5C6B80", hover_color="#475568", command=self._choose_folder
         ).pack(side="left", padx=9)
         ctk.CTkButton(
-            buttons, text="Limpar", width=75, fg_color="transparent", text_color="#153B82", border_width=1,
-            border_color="#153B82", command=self._clear_pdfs
+            buttons, text="Limpar", width=75, fg_color="transparent", text_color=PRIMARY_TEXT, border_width=1,
+            border_color=PRIMARY_TEXT, command=self._clear_pdfs
         ).pack(side="right")
 
-        ctk.CTkLabel(parent, textvariable=self.pdf_count_var, text_color="#4B5B70").pack(anchor="w", padx=20, pady=(12, 6))
-        self.pdf_list = ctk.CTkTextbox(parent, height=310, font=ctk.CTkFont(size=12), wrap="none")
+        ctk.CTkLabel(parent, textvariable=self.pdf_count_var, text_color=SECONDARY_TEXT).pack(anchor="w", padx=20, pady=(12, 6))
+        self.pdf_list = ctk.CTkTextbox(parent, height=250, font=ctk.CTkFont(size=12), wrap="none")
         self.pdf_list.pack(fill="both", expand=True, padx=20, pady=(0, 14))
         self.pdf_list.configure(state="disabled")
 
-        ctk.CTkLabel(parent, text="Pasta de saída", font=ctk.CTkFont(size=13, weight="bold"), text_color="#153B82").pack(
+        ctk.CTkLabel(parent, text="Pasta de saída", font=ctk.CTkFont(size=13, weight="bold"), text_color=PRIMARY_TEXT).pack(
             anchor="w", padx=20
         )
         output_row = ctk.CTkFrame(parent, fg_color="transparent")
         output_row.pack(fill="x", padx=20, pady=(5, 17))
-        ctk.CTkLabel(output_row, textvariable=self.output_label_var, anchor="w", text_color="#4B5B70").pack(
+        ctk.CTkLabel(output_row, textvariable=self.output_label_var, anchor="w", text_color=SECONDARY_TEXT).pack(
             side="left", fill="x", expand=True
         )
         ctk.CTkButton(output_row, text="Alterar", width=84, command=self._choose_output).pack(side="right")
@@ -209,13 +322,13 @@ class AssinadorPMI(ctk.CTk):
         ctk.CTkLabel(
             parent,
             text="Escolha PNG, JPG ou JPEG com a assinatura.",
-            text_color="#4B5B70",
+            text_color=SECONDARY_TEXT,
             wraplength=320,
             justify="left",
         ).pack(anchor="w", padx=20)
         ctk.CTkButton(parent, text="Escolher imagem", command=self._choose_signature).pack(anchor="w", padx=20, pady=12)
         ctk.CTkLabel(
-            parent, textvariable=self.signature_label_var, text_color="#153B82", wraplength=320, justify="left"
+            parent, textvariable=self.signature_label_var, text_color=PRIMARY_TEXT, wraplength=320, justify="left"
         ).pack(anchor="w", padx=20, pady=(0, 18))
 
     def _build_settings_section(self, parent: ctk.CTkFrame) -> None:
@@ -235,13 +348,13 @@ class AssinadorPMI(ctk.CTk):
             parent,
             text="Pré-visualizar posição padrão",
             fg_color="transparent",
-            text_color="#153B82",
+            text_color=PRIMARY_TEXT,
             border_width=1,
-            border_color="#153B82",
+            border_color=PRIMARY_TEXT,
             command=self._open_predefined_preview,
         ).pack(anchor="w", padx=20, pady=(5, 10))
 
-        manual_box = ctk.CTkFrame(parent, fg_color="#EDF3FC", corner_radius=8)
+        manual_box = ctk.CTkFrame(parent, fg_color=MANUAL_BACKGROUND, corner_radius=8)
         manual_box.pack(fill="x", padx=20, pady=(0, 8))
         ctk.CTkSwitch(
             manual_box,
@@ -249,12 +362,12 @@ class AssinadorPMI(ctk.CTk):
             variable=self.manual_enabled_var,
             command=self._toggle_manual_controls,
             font=ctk.CTkFont(size=13, weight="bold"),
-            text_color="#153B82",
+            text_color=PRIMARY_TEXT,
         ).pack(anchor="w", padx=12, pady=(10, 4))
         ctk.CTkLabel(
             manual_box,
             text="Use somente quando a posição padrão não for suficiente.",
-            text_color="#4B5B70",
+            text_color=SECONDARY_TEXT,
             font=ctk.CTkFont(size=11),
         ).pack(anchor="w", padx=12)
         self.manual_controls = ctk.CTkFrame(manual_box, fg_color="transparent")
@@ -269,34 +382,40 @@ class AssinadorPMI(ctk.CTk):
         ctk.CTkLabel(
             parent,
             text="A assinatura é inserida como imagem visível. Para assinaturas certificadas, use um certificado digital apropriado.",
-            text_color="#6A778B", justify="left", wraplength=330, font=ctk.CTkFont(size=11),
+            text_color=HELP_TEXT, justify="left", wraplength=330, font=ctk.CTkFont(size=11),
         ).pack(anchor="w", padx=20, pady=(3, 17))
 
     @staticmethod
     def _option_field(parent: ctk.CTkFrame, label: str, variable: ctk.StringVar, values: list[str], row: int, column: int) -> None:
         holder = ctk.CTkFrame(parent, fg_color="transparent")
         holder.grid(row=row, column=column, sticky="ew", padx=(0, 8) if column == 0 else (8, 0), pady=6)
-        ctk.CTkLabel(holder, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color="#4B5B70").pack(anchor="w")
+        ctk.CTkLabel(holder, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color=SECONDARY_TEXT).pack(anchor="w")
         ctk.CTkOptionMenu(holder, values=values, variable=variable, height=33).pack(fill="x", pady=(4, 0))
 
     @staticmethod
     def _entry_field(parent: ctk.CTkFrame, label: str, variable: ctk.StringVar, row: int, column: int) -> None:
         holder = ctk.CTkFrame(parent, fg_color="transparent")
         holder.grid(row=row, column=column, sticky="ew", padx=(0, 8) if column == 0 else (8, 0), pady=6)
-        ctk.CTkLabel(holder, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color="#4B5B70").pack(anchor="w")
+        ctk.CTkLabel(holder, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color=SECONDARY_TEXT).pack(anchor="w")
         ctk.CTkEntry(holder, textvariable=variable, height=33).pack(fill="x", pady=(4, 0))
 
     def _choose_pdfs(self) -> None:
         files = filedialog.askopenfilenames(title="Selecione os PDFs", filetypes=[("Arquivos PDF", "*.pdf")])
-        self._set_pdfs([Path(file) for file in files])
+        paths = [Path(file) for file in files]
+        folders = {path.parent.resolve() for path in paths}
+        self._set_pdfs(paths, document_dir=folders.pop() if len(folders) == 1 else None)
+        self._save_settings()
 
     def _choose_folder(self) -> None:
         folder = filedialog.askdirectory(title="Selecione a pasta com PDFs")
         if folder:
-            self._set_pdfs(sorted(Path(folder).glob("*.pdf"), key=lambda item: item.name.lower()))
+            document_dir = Path(folder).resolve()
+            self._set_pdfs(sorted(document_dir.glob("*.pdf"), key=lambda item: item.name.lower()), document_dir=document_dir)
+            self._save_settings()
 
-    def _set_pdfs(self, paths: Iterable[Path]) -> None:
+    def _set_pdfs(self, paths: Iterable[Path], document_dir: Path | None = None) -> None:
         self.pdfs = list(dict.fromkeys(path.resolve() for path in paths if path.suffix.lower() == ".pdf"))
+        self.document_dir = document_dir.resolve() if document_dir and document_dir.is_dir() else None
         selected = {str(path) for path in self.pdfs}
         self.manual_positions = {path: point for path, point in self.manual_positions.items() if path in selected}
         self.manual_widths = {path: width for path, width in self.manual_widths.items() if path in selected}
@@ -306,7 +425,9 @@ class AssinadorPMI(ctk.CTk):
 
     def _clear_pdfs(self) -> None:
         self.pdfs.clear()
+        self.document_dir = None
         self._update_pdf_list()
+        self._save_settings()
 
     def _update_pdf_list(self) -> None:
         self.pdf_count_var.set(f"{len(self.pdfs)} PDF(s) selecionado(s)")
@@ -322,12 +443,14 @@ class AssinadorPMI(ctk.CTk):
         if filename:
             self.signature_path = Path(filename)
             self.signature_label_var.set(self.signature_path.name)
+            self._save_settings()
 
     def _choose_output(self) -> None:
         folder = filedialog.askdirectory(title="Escolha a pasta de saída")
         if folder:
             self.output_dir = Path(folder)
             self.output_label_var.set(str(self.output_dir))
+            self._save_settings()
 
     def _toggle_manual_controls(self) -> None:
         if self.manual_enabled_var.get():
@@ -351,6 +474,7 @@ class AssinadorPMI(ctk.CTk):
         if dimensions is None:
             return
         width_mm, margin_mm = dimensions
+        self._save_settings()
 
         manual_mode = self.manual_enabled_var.get()
         if manual_mode:
@@ -644,15 +768,15 @@ class PositionPreview(ctk.CTkToplevel):
         self.title("Pré-visualização da assinatura")
         self.geometry("1120x850")
         self.minsize(900, 720)
-        self.configure(fg_color="#F3F6FA")
+        self.configure(fg_color=APP_BACKGROUND)
         self.transient(app)
 
         self.document_var = ctk.StringVar()
         ctk.CTkLabel(
-            self, text="Pré-visualização da posição padrão", font=ctk.CTkFont(size=21, weight="bold"), text_color="#153B82"
+            self, text="Pré-visualização da posição padrão", font=ctk.CTkFont(size=21, weight="bold"), text_color=PRIMARY_TEXT
         ).pack(pady=(18, 3))
         ctk.CTkLabel(
-            self, text=f"Posição escolhida: {position}. Nenhum PDF será alterado nesta etapa.", text_color="#4B5B70"
+            self, text=f"Posição escolhida: {position}. Nenhum PDF será alterado nesta etapa.", text_color=SECONDARY_TEXT
         ).pack(padx=20)
         ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 4))
 
@@ -748,7 +872,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.title("Ajustar posição manual da assinatura")
         self.geometry("1120x850")
         self.minsize(900, 720)
-        self.configure(fg_color="#F3F6FA")
+        self.configure(fg_color=APP_BACKGROUND)
         self.transient(app)
         self.grab_set()
 
@@ -758,7 +882,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
 
         size_row = ctk.CTkFrame(self, fg_color="transparent")
         size_row.pack(fill="x", padx=105, pady=(20, 0))
-        ctk.CTkLabel(size_row, text="Tamanho da assinatura:", text_color="#153B82").pack(side="left")
+        ctk.CTkLabel(size_row, text="Tamanho da assinatura:", text_color=PRIMARY_TEXT).pack(side="left")
         ctk.CTkLabel(size_row, textvariable=self.size_var, font=ctk.CTkFont(weight="bold"), text_color="#00A650").pack(side="right")
         self.size_slider = ctk.CTkSlider(
             self, from_=10, to=250, number_of_steps=240, command=self._change_size, progress_color="#00A650"
@@ -772,7 +896,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
             text="Usar a mesma posição e tamanho em todos os PDFs",
             variable=self.app.shared_manual_var,
             command=self._toggle_shared_mode,
-            text_color="#153B82",
+            text_color=PRIMARY_TEXT,
         )
         self.shared_checkbox.pack(side="left")
         self.previous_button = ctk.CTkButton(controls, text="← Anterior", width=105, command=self._previous)
