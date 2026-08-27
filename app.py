@@ -43,6 +43,7 @@ PRIMARY_TEXT = "#153B82"
 SECONDARY_TEXT = "#4B5B70"
 HELP_TEXT = "#6A778B"
 MANUAL_BACKGROUND = "#EDF3FC"
+PREVIEW_BACKGROUND = "#DCE5F0"
 
 
 def _apply_window_icon(window: ctk.CTk | ctk.CTkToplevel) -> None:
@@ -426,8 +427,8 @@ class AssinadorPMI(ctk.CTk):
         ctk.CTkButton(
             self.manual_controls,
             text="Abrir prévia e ajustar",
-            fg_color="#153B82",
-            hover_color="#0D2F6C",
+            fg_color="#5C6B80",
+            hover_color="#475568",
             command=self._open_manual_editor,
         ).pack(anchor="w", pady=(8, 3))
         self.manual_controls.pack_forget()
@@ -871,7 +872,7 @@ class PositionPreview(ctk.CTkToplevel):
         _apply_window_icon(self)
         self.geometry("1120x850")
         self.minsize(900, 720)
-        self.configure(fg_color="#DCE5F0")
+        self.configure(fg_color=PREVIEW_BACKGROUND)
         self.transient(app)
 
         toolbar = ctk.CTkFrame(self, height=54, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
@@ -999,7 +1000,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         _apply_window_icon(self)
         self.geometry("1120x850")
         self.minsize(900, 720)
-        self.configure(fg_color=APP_BACKGROUND)
+        self.configure(fg_color=PREVIEW_BACKGROUND)
         self.transient(app)
         self.grab_set()
 
