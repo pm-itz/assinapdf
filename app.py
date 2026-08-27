@@ -30,7 +30,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.4"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -621,9 +621,10 @@ class AssinadorPMI(ctk.CTk):
 
     def _install_downloaded_update(self, installer: Path) -> None:
         try:
-            # O Inno Setup solicita elevação se necessária e substitui a versão instalada.
-            subprocess.Popen([str(installer), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS"])
-            self.status_var.set("Instalador iniciado. O AssinaPDF será fechado para concluir a atualização.")
+            # A instalação é visível: assim o usuário pode acompanhar a atualização e
+            # nenhum Setup fica parecendo travado em segundo plano.
+            subprocess.Popen([str(installer), "/CLOSEAPPLICATIONS"])
+            self.status_var.set("Abrindo o instalador da atualização...")
             self.after(500, self.destroy)
         except OSError as error:
             messagebox.showerror("Atualização", f"Não foi possível iniciar o instalador:\n{error}", parent=self)

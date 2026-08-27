@@ -62,8 +62,8 @@ o anexa à Release. Antes de publicar, altere `APP_VERSION` em `app.py` e
 o push e envie uma tag:
 
 ```bash
-git tag v1.0.3
-git push origin v1.0.3
+git tag v1.0.4
+git push origin v1.0.4
 ```
 
 Após a automação terminar, o arquivo `AssinaPDF-Setup.exe` estará anexado à
