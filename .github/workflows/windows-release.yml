@@ -29,6 +29,17 @@ jobs:
         shell: cmd
         run: build_windows.bat
 
+      - name: Verify packaged application starts
+        shell: pwsh
+        run: |
+          $app = Resolve-Path "dist\\AssinaPDF\\AssinaPDF.exe"
+          $process = Start-Process -FilePath $app -PassThru
+          Start-Sleep -Seconds 8
+          if ($process.HasExited) {
+            throw "AssinaPDF closed during startup (exit code: $($process.ExitCode))."
+          }
+          Stop-Process -Id $process.Id -Force
+
       - name: Publish installer to GitHub Release
         shell: pwsh
         env:
