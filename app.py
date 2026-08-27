@@ -871,21 +871,15 @@ class PositionPreview(ctk.CTkToplevel):
         _apply_window_icon(self)
         self.geometry("1120x850")
         self.minsize(900, 720)
-        self.configure(fg_color=APP_BACKGROUND)
+        self.configure(fg_color="#DCE5F0")
         self.transient(app)
 
-        self.document_var = ctk.StringVar()
-        ctk.CTkLabel(
-            self, text="Pré-visualização da posição padrão", font=ctk.CTkFont(size=21, weight="bold"), text_color=PRIMARY_TEXT
-        ).pack(pady=(18, 3))
-        ctk.CTkLabel(
-            self, text=f"Posição escolhida: {position}. Nenhum PDF será alterado nesta etapa.", text_color=SECONDARY_TEXT
-        ).pack(padx=20)
-        ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=14, weight="bold")).pack(pady=(13, 4))
-
         toolbar = ctk.CTkFrame(self, height=54, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
-        toolbar.pack(fill="x", padx=24, pady=(0, 10))
+        toolbar.pack(fill="x", padx=24, pady=(18, 10))
         toolbar.pack_propagate(False)
+        ctk.CTkLabel(
+            toolbar, text=f"Posição: {position}", font=ctk.CTkFont(size=13, weight="bold"), text_color=PRIMARY_TEXT
+        ).pack(side="left", padx=(14, 10), pady=8)
         navigation = ctk.CTkFrame(toolbar, fg_color="transparent")
         navigation.pack(side="left", padx=10, pady=8)
         self.previous_button = ctk.CTkButton(
@@ -924,7 +918,6 @@ class PositionPreview(ctk.CTkToplevel):
 
     def _render_current(self) -> None:
         pdf_path = self.pdfs[self.index]
-        self.document_var.set(f"Documento {self.index + 1} de {len(self.pdfs)}: {pdf_path.name}")
         try:
             document = fitz.open(pdf_path)
             try:
