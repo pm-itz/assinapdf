@@ -2,8 +2,9 @@
 setlocal EnableExtensions
 cd /d "%~dp0"
 
-rem Gera o aplicativo Windows e, se o Inno Setup estiver instalado, o instalador.
-set "PYTHON_CMD=py -3"
+rem Prefere Python 3.12, cuja distribuição do Tcl/Tk é validada neste empacotamento.
+set "PYTHON_CMD=py -3.12"
+py -3.12 --version >nul 2>nul || set "PYTHON_CMD=py -3"
 where py >nul 2>nul || set "PYTHON_CMD=python"
 
 echo [1/4] Criando ambiente de compilacao...
@@ -15,12 +16,15 @@ if errorlevel 1 goto :error
 
 echo [2/4] Instalando dependencias...
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt pyinstaller
+python -m pip install -r requirements.txt "pyinstaller>=6.22.2"
 if errorlevel 1 goto :error
 
 echo [3/4] Gerando AssinaPDF.exe...
-pyinstaller --noconfirm --clean --windowed --name AssinaPDF --icon "assets\imperatriz.ico" --add-data "assets;assets" app.py
+pyinstaller --noconfirm --clean --windowed --name AssinaPDF --icon "assets\imperatriz.ico" --add-data "assets;assets" --collect-all tkinter --collect-all customtkinter app.py
 if errorlevel 1 goto :error
+
+if not exist "dist\AssinaPDF\_internal\_tcl_data\init.tcl" goto :tk_error
+if not exist "dist\AssinaPDF\_internal\_tk_data\tk.tcl" goto :tk_error
 
 rem Localiza o compilador do Inno Setup, inclusive quando instalado só para o usuário atual.
 set "ISCC="
@@ -55,6 +59,11 @@ goto :success
 :error
 echo.
 echo Nao foi possivel concluir a compilacao. Veja as mensagens acima.
+exit /b 1
+
+:tk_error
+echo.
+echo O empacotamento nao incluiu os arquivos necessarios do Tk/Tcl.
 exit /b 1
 
 :success
