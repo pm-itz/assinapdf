@@ -274,8 +274,9 @@ class AssinadorPMI(ctk.CTk):
         if logo_path:
             try:
                 image = Image.open(logo_path)
-                self.logo_image = ctk.CTkImage(light_image=image, dark_image=image, size=(245, 88))
-                ctk.CTkLabel(parent, text="", image=self.logo_image).pack(side="left", padx=(28, 18), pady=18)
+                # Mantém a proporção da marca dentro do cabeçalho compacto.
+                self.logo_image = ctk.CTkImage(light_image=image, dark_image=image, size=(215, 76))
+                ctk.CTkLabel(parent, text="", image=self.logo_image).pack(side="left", padx=(24, 14), pady=14)
                 return
             except OSError:
                 pass
