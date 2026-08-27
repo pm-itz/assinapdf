@@ -22,7 +22,7 @@ from urllib.request import Request, urlopen
 import customtkinter as ctk
 import fitz  # PyMuPDF
 from PIL import Image, ImageTk
-from tkinter import Canvas, Menu, filedialog, messagebox
+from tkinter import Canvas, Menu, Scrollbar, filedialog, messagebox
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -31,7 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.1.2"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -820,6 +820,35 @@ class AssinadorPMI(ctk.CTk):
             messagebox.showinfo("Processamento concluído", message)
 
 
+def _create_scrollable_pdf_canvas(parent: ctk.CTkFrame, cursor: str = "") -> Canvas:
+    """Cria uma área de PDF com rolagem para suportar níveis maiores de zoom."""
+    parent.grid_columnconfigure(0, weight=1)
+    parent.grid_rowconfigure(0, weight=1)
+    canvas = Canvas(parent, bg="white", highlightthickness=0, cursor=cursor)
+    vertical = Scrollbar(parent, orient="vertical", command=canvas.yview)
+    horizontal = Scrollbar(parent, orient="horizontal", command=canvas.xview)
+    canvas.configure(xscrollcommand=horizontal.set, yscrollcommand=vertical.set)
+    canvas.grid(row=0, column=0, sticky="nsew", padx=(8, 0), pady=(8, 0))
+    vertical.grid(row=0, column=1, sticky="ns", pady=(8, 0))
+    horizontal.grid(row=1, column=0, sticky="ew", padx=(8, 0), pady=(0, 8))
+    return canvas
+
+
+def _center_pdf_content(canvas: Canvas, width: int, height: int) -> tuple[int, int]:
+    """Centraliza páginas menores e mantém páginas ampliadas roláveis."""
+    canvas.update_idletasks()
+    viewport_width = max(1, canvas.winfo_width())
+    viewport_height = max(1, canvas.winfo_height())
+    content_width = max(viewport_width, width)
+    content_height = max(viewport_height, height)
+    offset_x = max(0, (content_width - width) // 2)
+    offset_y = max(0, (content_height - height) // 2)
+    canvas.configure(scrollregion=(0, 0, content_width, content_height))
+    canvas.xview_moveto(0)
+    canvas.yview_moveto(0)
+    return offset_x, offset_y
+
+
 class PositionPreview(ctk.CTkToplevel):
     """Exibe como uma posição padrão ficará antes de assinar o lote."""
 
@@ -834,6 +863,7 @@ class PositionPreview(ctk.CTkToplevel):
         self.margin = margin_mm * MM_TO_POINTS
         self.position = position
         self.index = 0
+        self.zoom_factor = 1.0
         self.preview_image: ImageTk.PhotoImage | None = None
         self.signature_image: ImageTk.PhotoImage | None = None
 
@@ -860,10 +890,18 @@ class PositionPreview(ctk.CTkToplevel):
         self.next_button.pack(side="left", padx=8)
         ctk.CTkButton(controls, text="Fechar", command=self.destroy).pack(side="right")
 
+        zoom_controls = ctk.CTkFrame(self, fg_color="transparent")
+        zoom_controls.pack(pady=(0, 8))
+        ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(zoom_controls, text="−", width=34, command=lambda: self._change_zoom(-1)).pack(side="left")
+        self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54)
+        self.zoom_label.pack(side="left", padx=6)
+        ctk.CTkButton(zoom_controls, text="+", width=34, command=lambda: self._change_zoom(1)).pack(side="left")
+        ctk.CTkButton(zoom_controls, text="Ajustar à página", width=128, command=self._reset_zoom).pack(side="left", padx=(10, 0))
+
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
-        self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0)
-        self.canvas.pack(expand=True, padx=8, pady=8)
+        self.canvas = _create_scrollable_pdf_canvas(preview_frame)
         self._render_current()
 
     def _page_number(self, document: fitz.Document) -> int:
@@ -879,15 +917,15 @@ class PositionPreview(ctk.CTkToplevel):
                     raise ValueError("PDF sem páginas")
                 page = document[self._page_number(document)]
                 page_rect = page.rect
-                scale = min(1.8, 900 / page_rect.width, 630 / page_rect.height)
+                scale = min(1.8, 900 / page_rect.width, 630 / page_rect.height) * self.zoom_factor
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
             finally:
                 document.close()
             page_image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
             self.preview_image = ImageTk.PhotoImage(page_image)
-            self.canvas.configure(width=pixmap.width, height=pixmap.height)
             self.canvas.delete("all")
-            self.canvas.create_image(0, 0, image=self.preview_image, anchor="nw")
+            offset_x, offset_y = _center_pdf_content(self.canvas, pixmap.width, pixmap.height)
+            self.canvas.create_image(offset_x, offset_y, image=self.preview_image, anchor="nw")
             with Image.open(self.signature) as signature_image:
                 aspect_ratio = signature_image.height / signature_image.width
                 rect = AssinadorPMI._signature_rectangle(
@@ -897,13 +935,13 @@ class PositionPreview(ctk.CTkToplevel):
                     (max(1, round(rect.width * scale)), max(1, round(rect.height * scale))), Image.Resampling.LANCZOS
                 )
             self.signature_image = ImageTk.PhotoImage(preview)
-            x = (rect.x0 - page_rect.x0) * scale
-            y = (rect.y0 - page_rect.y0) * scale
+            x = offset_x + (rect.x0 - page_rect.x0) * scale
+            y = offset_y + (rect.y0 - page_rect.y0) * scale
             self.canvas.create_image(x, y, image=self.signature_image, anchor="nw")
             self.canvas.create_rectangle(x, y, x + preview.width, y + preview.height, outline="#00A650", width=2)
         except Exception as error:
             self.canvas.delete("all")
-            self.canvas.configure(width=620, height=260)
+            _center_pdf_content(self.canvas, 620, 260)
             self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
         self.previous_button.configure(state="normal" if self.index else "disabled")
         self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
@@ -914,6 +952,16 @@ class PositionPreview(ctk.CTkToplevel):
 
     def _next(self) -> None:
         self.index += 1
+        self._render_current()
+
+    def _change_zoom(self, direction: int) -> None:
+        self.zoom_factor = min(3.0, max(0.5, self.zoom_factor * (1.25 if direction > 0 else 0.8)))
+        self.zoom_label.configure(text=f"{self.zoom_factor:.0%}")
+        self._render_current()
+
+    def _reset_zoom(self) -> None:
+        self.zoom_factor = 1.0
+        self.zoom_label.configure(text="100%")
         self._render_current()
 
 
@@ -936,6 +984,9 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.index = 0
         self.page_rect: fitz.Rect | None = None
         self.scale = 1.0
+        self.zoom_factor = 1.0
+        self.canvas_offset_x = 0
+        self.canvas_offset_y = 0
         self.signature_width = 0.0
         self.signature_height = 0.0
         self.preview_image: ImageTk.PhotoImage | None = None
@@ -978,10 +1029,18 @@ class ManualPositionEditor(ctk.CTkToplevel):
         ).pack(side="right")
         ctk.CTkLabel(self, textvariable=self.document_var, font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(0, 5))
 
+        zoom_controls = ctk.CTkFrame(self, fg_color="transparent")
+        zoom_controls.pack(pady=(0, 8))
+        ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(zoom_controls, text="−", width=34, command=lambda: self._change_zoom(-1)).pack(side="left")
+        self.zoom_label = ctk.CTkLabel(zoom_controls, text="100%", width=54)
+        self.zoom_label.pack(side="left", padx=6)
+        ctk.CTkButton(zoom_controls, text="+", width=34, command=lambda: self._change_zoom(1)).pack(side="left")
+        ctk.CTkButton(zoom_controls, text="Ajustar à página", width=128, command=self._reset_zoom).pack(side="left", padx=(10, 0))
+
         preview_frame = ctk.CTkFrame(self, fg_color="white", border_width=1, border_color="#D9E1EC")
         preview_frame.pack(fill="both", expand=True, padx=24, pady=(0, 18))
-        self.canvas = Canvas(preview_frame, bg="white", highlightthickness=0, cursor="crosshair")
-        self.canvas.pack(expand=True, padx=8, pady=8)
+        self.canvas = _create_scrollable_pdf_canvas(preview_frame, cursor="crosshair")
         self.canvas.bind("<Button-1>", self._choose_position)
 
         self._sync_shared_controls()
@@ -1007,21 +1066,21 @@ class ManualPositionEditor(ctk.CTkToplevel):
                     raise ValueError("PDF sem páginas")
                 page = document[self._page_number(document)]
                 self.page_rect = page.rect
-                self.scale = min(1.8, 900 / page.rect.width, 610 / page.rect.height)
+                self.scale = min(1.8, 900 / page.rect.width, 610 / page.rect.height) * self.zoom_factor
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(self.scale, self.scale), alpha=False)
             finally:
                 document.close()
             page_image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
             self.preview_image = ImageTk.PhotoImage(page_image)
-            self.canvas.configure(width=pixmap.width, height=pixmap.height)
             self.canvas.delete("all")
-            self.canvas.create_image(0, 0, image=self.preview_image, anchor="nw")
+            self.canvas_offset_x, self.canvas_offset_y = _center_pdf_content(self.canvas, pixmap.width, pixmap.height)
+            self.canvas.create_image(self.canvas_offset_x, self.canvas_offset_y, image=self.preview_image, anchor="nw")
             self._draw_signature()
             configured = self._get_position(pdf_path) is not None
             self.instruction_var.set("Posição definida — clique para ajustar." if configured else "Posição pendente — clique sobre a prévia.")
         except Exception as error:
             self.canvas.delete("all")
-            self.canvas.configure(width=620, height=260)
+            self.canvas_offset_x, self.canvas_offset_y = _center_pdf_content(self.canvas, 620, 260)
             self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
             self.instruction_var.set("Escolha outro documento ou corrija o PDF antes de continuar.")
         if not self.shared:
@@ -1088,8 +1147,8 @@ class ManualPositionEditor(ctk.CTkToplevel):
             display_height = max(1, round(rect.height * self.scale))
             preview = signature_image.convert("RGBA").resize((display_width, display_height), Image.Resampling.LANCZOS)
         self.signature_image = ImageTk.PhotoImage(preview)
-        x = (rect.x0 - self.page_rect.x0) * self.scale
-        y = (rect.y0 - self.page_rect.y0) * self.scale
+        x = self.canvas_offset_x + (rect.x0 - self.page_rect.x0) * self.scale
+        y = self.canvas_offset_y + (rect.y0 - self.page_rect.y0) * self.scale
         self.canvas.create_image(x, y, image=self.signature_image, anchor="nw")
         self.canvas.create_rectangle(x, y, x + display_width, y + display_height, outline="#00A650", width=2)
 
@@ -1104,8 +1163,10 @@ class ManualPositionEditor(ctk.CTkToplevel):
         if self.page_rect is None:
             return
         # event é um tkinter.Event; a anotação ampla evita depender do tipo interno do Tk.
-        x = float(getattr(event, "x")) / self.scale + self.page_rect.x0 - self.signature_width / 2
-        y = float(getattr(event, "y")) / self.scale + self.page_rect.y0 - self.signature_height / 2
+        canvas_x = self.canvas.canvasx(float(getattr(event, "x"))) - self.canvas_offset_x
+        canvas_y = self.canvas.canvasy(float(getattr(event, "y"))) - self.canvas_offset_y
+        x = canvas_x / self.scale + self.page_rect.x0 - self.signature_width / 2
+        y = canvas_y / self.scale + self.page_rect.y0 - self.signature_height / 2
         x = min(max(x, self.page_rect.x0), self.page_rect.x1 - self.signature_width)
         y = min(max(y, self.page_rect.y0), self.page_rect.y1 - self.signature_height)
         self._set_position(self.pdfs[self.index], (
@@ -1120,6 +1181,16 @@ class ManualPositionEditor(ctk.CTkToplevel):
 
     def _next(self) -> None:
         self.index += 1
+        self._render_current()
+
+    def _change_zoom(self, direction: int) -> None:
+        self.zoom_factor = min(3.0, max(0.5, self.zoom_factor * (1.25 if direction > 0 else 0.8)))
+        self.zoom_label.configure(text=f"{self.zoom_factor:.0%}")
+        self._render_current()
+
+    def _reset_zoom(self) -> None:
+        self.zoom_factor = 1.0
+        self.zoom_label.configure(text="100%")
         self._render_current()
 
     def _save(self) -> None:

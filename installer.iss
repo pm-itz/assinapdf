@@ -1,6 +1,6 @@
 ; Instalador Windows do AssinaPDF. Compile com Inno Setup 6.
 #define MyAppName "AssinaPDF"
-#define MyAppVersion "1.1.1"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "Prefeitura Municipal de Imperatriz"
 #define MyAppExeName "AssinaPDF.exe"
 
