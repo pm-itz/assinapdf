@@ -124,7 +124,6 @@ class AssinadorPMI(ctk.CTk):
         super().__init__()
         self.title("Assinador de PDFs | Prefeitura de Imperatriz")
         self.minsize(1000, 700)
-        self._start_maximized()
         self.configure(fg_color=APP_BACKGROUND)
 
         self.pdfs: list[Path] = []
@@ -158,6 +157,9 @@ class AssinadorPMI(ctk.CTk):
         self._set_window_icon()
         self._build_menu()
         self.protocol("WM_DELETE_WINDOW", self._close_application)
+        # Executa antes do primeiro redesenho da janela; no Windows, isso faz
+        # o estado maximizado ser respeitado sem ocultar a interface.
+        self.after(0, self._start_maximized)
         self.after(120, self._process_events)
 
     def _start_maximized(self) -> None:
