@@ -1284,6 +1284,15 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self._render_current()
         # Garante a centralização já na abertura, sem exigir alteração de zoom.
         self.after_idle(self._render_current)
+        # No Windows, maximiza quando a janela auxiliar já foi criada pelo Tk.
+        self.after(0, self._maximize_on_open)
+
+    def _maximize_on_open(self) -> None:
+        if sys.platform.startswith("win"):
+            try:
+                self.state("zoomed")
+            except Exception:
+                pass
 
     def _render_current(self) -> None:
         pdf_path = self.pdfs[self.index]
