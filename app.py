@@ -31,7 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.1.4"
+APP_VERSION = "1.1.5"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -124,7 +124,7 @@ class AssinadorPMI(ctk.CTk):
         super().__init__()
         self.title("Assinador de PDFs | Prefeitura de Imperatriz")
         self.minsize(1000, 700)
-        self._center_window()
+        self._start_maximized()
         self.configure(fg_color=APP_BACKGROUND)
 
         self.pdfs: list[Path] = []
@@ -160,8 +160,17 @@ class AssinadorPMI(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self._close_application)
         self.after(120, self._process_events)
 
-    def _center_window(self) -> None:
-        """Abre em tamanho confortável e centralizada na área útil do monitor."""
+    def _start_maximized(self) -> None:
+        """Inicia maximizada sem esconder ou reconstruir a janela."""
+        if sys.platform.startswith("win"):
+            try:
+                self.state("zoomed")
+                return
+            except Exception:
+                pass
+
+        # Mantém uma abertura confortável em sistemas que não oferecem o
+        # estado "zoomed" do Windows.
         screen_width = self.winfo_screenwidth()
         screen_height = self.winfo_screenheight()
         width = min(1160, max(1000, screen_width - 80))

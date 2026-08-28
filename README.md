@@ -76,7 +76,7 @@ atualização e fecha para concluir a instalação.
 
 Para publicar uma atualização, altere `APP_VERSION` em `app.py` e
 `MyAppVersion` em `installer.iss`, gere `AssinaPDF-Setup.exe` no Windows e
-publique uma GitHub Release com a tag `v1.1.4`. Anexe ao Release
+publique uma GitHub Release com a tag `v1.1.5`. Anexe ao Release
 o arquivo com o nome exato `AssinaPDF-Setup.exe`.
 
 ## Executar pelo código-fonte no Windows
