@@ -31,7 +31,7 @@ APP_DIR = Path(__file__).resolve().parent
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", APP_DIR))
 DEFAULT_OUTPUT_NAME = "pdfs_assinados"
 MM_TO_POINTS = 72 / 25.4
-APP_VERSION = "1.1.5"
+APP_VERSION = "1.1.6"
 GITHUB_REPOSITORY = "pm-itz/assinapdf"
 UPDATE_ASSET_NAME = "AssinaPDF-Setup.exe"
 LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPOSITORY}/releases/latest"
@@ -143,6 +143,7 @@ class AssinadorPMI(ctk.CTk):
         self.manual_enabled_var = ctk.BooleanVar(value=False)
         self.shared_manual_var = ctk.BooleanVar(value=False)
         self.pages_var = ctk.StringVar(value="Última página")
+        self.custom_pages_var = ctk.StringVar(value="")
         self.width_var = ctk.StringVar(value="45")
         self.margin_var = ctk.StringVar(value="12")
         self.status_var = ctk.StringVar(value="Pronto para selecionar documentos.")
@@ -203,8 +204,11 @@ class AssinadorPMI(ctk.CTk):
         if position in {"Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro"}:
             self.position_var.set(position)
         pages = settings.get("pages")
-        if pages in {"Última página", "Primeira página", "Todas as páginas"}:
+        if pages in {"Última página", "Primeira página", "Todas as páginas", "Intervalo personalizado"}:
             self.pages_var.set(pages)
+        custom_pages = settings.get("custom_pages")
+        if isinstance(custom_pages, str):
+            self.custom_pages_var.set(custom_pages)
 
         for key, variable, minimum in (("width_mm", self.width_var, 0.01), ("margin_mm", self.margin_var, 0.0)):
             try:
@@ -232,6 +236,7 @@ class AssinadorPMI(ctk.CTk):
         settings = {
             "position": self.position_var.get(),
             "pages": self.pages_var.get(),
+            "custom_pages": self.custom_pages_var.get(),
             "width_mm": self.width_var.get(),
             "margin_mm": self.margin_var.get(),
             "signature_path": str(self.signature_path) if self.signature_path else None,
@@ -400,9 +405,32 @@ class AssinadorPMI(ctk.CTk):
         self._option_field(fields, "Posição padrão", self.position_var, [
             "Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro"
         ], 0, 0)
-        self._option_field(fields, "Aplicar em", self.pages_var, ["Última página", "Primeira página", "Todas as páginas"], 0, 1)
-        self._entry_field(fields, "Largura (mm)", self.width_var, 1, 0)
-        self._entry_field(fields, "Margem (mm)", self.margin_var, 1, 1)
+        self.pages_option = self._option_field(
+            fields,
+            "Aplicar em",
+            self.pages_var,
+            ["Última página", "Primeira página", "Todas as páginas", "Intervalo personalizado"],
+            0,
+            1,
+            command=self._toggle_custom_page_field,
+        )
+        self.custom_pages_holder = ctk.CTkFrame(fields, fg_color="transparent")
+        self.custom_pages_holder.grid(row=1, column=0, columnspan=2, sticky="ew", pady=6)
+        ctk.CTkLabel(
+            self.custom_pages_holder,
+            text="Páginas ou intervalos (ex.: 1-3, 5, 8-10)",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=SECONDARY_TEXT,
+        ).pack(anchor="w")
+        ctk.CTkEntry(
+            self.custom_pages_holder,
+            textvariable=self.custom_pages_var,
+            height=33,
+            placeholder_text="Ex.: 1-3, 5",
+        ).pack(fill="x", pady=(4, 0))
+        self._entry_field(fields, "Largura (mm)", self.width_var, 2, 0)
+        self._entry_field(fields, "Margem (mm)", self.margin_var, 2, 1)
+        self._toggle_custom_page_field()
 
         ctk.CTkButton(
             parent,
@@ -441,11 +469,21 @@ class AssinadorPMI(ctk.CTk):
         self.manual_controls.pack_forget()
 
     @staticmethod
-    def _option_field(parent: ctk.CTkFrame, label: str, variable: ctk.StringVar, values: list[str], row: int, column: int) -> None:
+    def _option_field(
+        parent: ctk.CTkFrame,
+        label: str,
+        variable: ctk.StringVar,
+        values: list[str],
+        row: int,
+        column: int,
+        command: object | None = None,
+    ) -> ctk.CTkOptionMenu:
         holder = ctk.CTkFrame(parent, fg_color="transparent")
         holder.grid(row=row, column=column, sticky="ew", padx=(0, 8) if column == 0 else (8, 0), pady=6)
         ctk.CTkLabel(holder, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color=SECONDARY_TEXT).pack(anchor="w")
-        ctk.CTkOptionMenu(holder, values=values, variable=variable, height=33).pack(fill="x", pady=(4, 0))
+        option_menu = ctk.CTkOptionMenu(holder, values=values, variable=variable, height=33, command=command)
+        option_menu.pack(fill="x", pady=(4, 0))
+        return option_menu
 
     @staticmethod
     def _entry_field(parent: ctk.CTkFrame, label: str, variable: ctk.StringVar, row: int, column: int) -> None:
@@ -453,6 +491,12 @@ class AssinadorPMI(ctk.CTk):
         holder.grid(row=row, column=column, sticky="ew", padx=(0, 8) if column == 0 else (8, 0), pady=6)
         ctk.CTkLabel(holder, text=label, font=ctk.CTkFont(size=12, weight="bold"), text_color=SECONDARY_TEXT).pack(anchor="w")
         ctk.CTkEntry(holder, textvariable=variable, height=33).pack(fill="x", pady=(4, 0))
+
+    def _toggle_custom_page_field(self, _value: str | None = None) -> None:
+        if self.pages_var.get() == "Intervalo personalizado":
+            self.custom_pages_holder.grid()
+        else:
+            self.custom_pages_holder.grid_remove()
 
     def _choose_pdfs(self) -> None:
         files = filedialog.askopenfilenames(title="Selecione os PDFs", filetypes=[("Arquivos PDF", "*.pdf")])
@@ -517,6 +561,8 @@ class AssinadorPMI(ctk.CTk):
         if not self.signature_path or not self.signature_path.exists():
             messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura válida.")
             return
+        if not self._validate_pages_for_selected_pdfs():
+            return
         dimensions = self._read_dimensions()
         if dimensions is None:
             return
@@ -555,7 +601,8 @@ class AssinadorPMI(ctk.CTk):
         self.status_var.set("Processando documentos...")
         config = (
             list(self.pdfs), self.signature_path, output, width_mm, margin_mm,
-            "Manual por PDF" if manual_mode else self.position_var.get(), self.pages_var.get(), manual_positions, manual_widths,
+            "Manual por PDF" if manual_mode else self.position_var.get(), self.pages_var.get(), self.custom_pages_var.get(),
+            manual_positions, manual_widths,
         )
         threading.Thread(target=self._sign_batch, args=config, daemon=True).start()
 
@@ -570,12 +617,63 @@ class AssinadorPMI(ctk.CTk):
             messagebox.showwarning("Medidas", "Informe largura maior que zero e margem igual ou maior que zero.")
             return None
 
+    def _selected_page_numbers(self, page_count: int) -> list[int]:
+        """Converte a escolha do usuário em índices de página do PDF."""
+        selection = self.pages_var.get()
+        if selection == "Primeira página":
+            return [0]
+        if selection == "Última página":
+            return [page_count - 1]
+        if selection == "Todas as páginas":
+            return list(range(page_count))
+
+        return self._parse_custom_page_numbers(self.custom_pages_var.get(), page_count)
+
+    @staticmethod
+    def _parse_custom_page_numbers(specification: str, page_count: int) -> list[int]:
+        specification = specification.strip()
+        if not specification:
+            raise ValueError("Informe as páginas desejadas, por exemplo: 1-3, 5.")
+
+        pages: set[int] = set()
+        for item in specification.split(","):
+            item = item.strip()
+            match = re.fullmatch(r"(\d+)(?:\s*-\s*(\d+))?", item)
+            if not match:
+                raise ValueError("Use apenas números e intervalos, por exemplo: 1-3, 5, 8-10.")
+            start = int(match.group(1))
+            end = int(match.group(2) or start)
+            if start < 1 or end < start:
+                raise ValueError("As páginas devem ser números positivos; o início do intervalo vem antes do fim.")
+            if end > page_count:
+                raise ValueError(f"A página {end} não existe neste PDF, que possui {page_count} página(s).")
+            pages.update(range(start - 1, end))
+        return sorted(pages)
+
+    def _validate_pages_for_selected_pdfs(self) -> bool:
+        """Garante que a seleção de páginas existe em todos os PDFs do lote."""
+        try:
+            for pdf_path in self.pdfs:
+                with fitz.open(pdf_path) as document:
+                    if document.page_count == 0:
+                        raise ValueError(f"{pdf_path.name} não possui páginas.")
+                    try:
+                        self._selected_page_numbers(document.page_count)
+                    except ValueError as error:
+                        raise ValueError(f"{pdf_path.name}: {error}") from error
+        except (OSError, RuntimeError, ValueError) as error:
+            messagebox.showwarning("Páginas", f"Verifique a seleção de páginas:\n{error}")
+            return False
+        return True
+
     def _open_manual_editor(self) -> None:
         if not self.pdfs:
             messagebox.showwarning("Documentos", "Selecione pelo menos um arquivo PDF antes de definir as posições.")
             return
         if not self.signature_path or not self.signature_path.exists():
             messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura antes de definir as posições.")
+            return
+        if not self._validate_pages_for_selected_pdfs():
             return
         dimensions = self._read_dimensions()
         if dimensions is None:
@@ -591,6 +689,8 @@ class AssinadorPMI(ctk.CTk):
         if not self.signature_path or not self.signature_path.exists():
             messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura antes de abrir a prévia.")
             return
+        if not self._validate_pages_for_selected_pdfs():
+            return
         dimensions = self._read_dimensions()
         if dimensions is None:
             return
@@ -598,7 +698,7 @@ class AssinadorPMI(ctk.CTk):
 
     def _sign_batch(
         self, pdfs: list[Path], signature: Path, output_dir: Path, width_mm: float, margin_mm: float, position: str,
-        pages: str, manual_positions: dict[str, tuple[float, float]], manual_widths: dict[str, float],
+        pages: str, custom_pages: str, manual_positions: dict[str, tuple[float, float]], manual_widths: dict[str, float],
     ) -> None:
         output_dir.mkdir(parents=True, exist_ok=True)
         successes: list[str] = []
@@ -615,7 +715,7 @@ class AssinadorPMI(ctk.CTk):
                     destination = self._available_destination(pdf_path, output_dir)
                     signature_width = manual_widths.get(str(pdf_path.resolve()), width_mm) if position == "Manual por PDF" else width_mm
                     self._sign_pdf(
-                        pdf_path, signature, destination, signature_width, margin_mm, aspect_ratio, position, pages,
+                        pdf_path, signature, destination, signature_width, margin_mm, aspect_ratio, position, pages, custom_pages,
                         manual_positions.get(str(pdf_path.resolve())),
                     )
                     successes.append(pdf_path.name)
@@ -640,7 +740,7 @@ class AssinadorPMI(ctk.CTk):
     @staticmethod
     def _sign_pdf(
         source: Path, signature: Path, destination: Path, width_mm: float, margin_mm: float, aspect_ratio: float,
-        position: str, pages: str, manual_position: tuple[float, float] | None = None,
+        position: str, pages: str, custom_pages: str, manual_position: tuple[float, float] | None = None,
     ) -> None:
         width = width_mm * MM_TO_POINTS
         height = width * aspect_ratio
@@ -649,11 +749,14 @@ class AssinadorPMI(ctk.CTk):
         try:
             if document.page_count == 0:
                 raise ValueError("PDF sem páginas")
-            page_numbers = {
-                "Última página": [document.page_count - 1],
-                "Primeira página": [0],
-                "Todas as páginas": list(range(document.page_count)),
-            }[pages]
+            if pages == "Intervalo personalizado":
+                page_numbers = AssinadorPMI._parse_custom_page_numbers(custom_pages, document.page_count)
+            else:
+                page_numbers = {
+                    "Última página": [document.page_count - 1],
+                    "Primeira página": [0],
+                    "Todas as páginas": list(range(document.page_count)),
+                }[pages]
             for page_number in page_numbers:
                 page = document[page_number]
                 rectangle = AssinadorPMI._signature_rectangle(page.rect, width, height, margin, position, manual_position)
@@ -866,9 +969,12 @@ class PositionPreview(ctk.CTkToplevel):
         self.margin = margin_mm * MM_TO_POINTS
         self.position = position
         self.index = 0
+        self.page_index = 0
+        self.page_numbers: list[int] = []
         self.zoom_factor = 1.0
         self.preview_image: ImageTk.PhotoImage | None = None
         self.signature_image: ImageTk.PhotoImage | None = None
+        self.page_label_var = ctk.StringVar(value="Página")
 
         self.title("Pré-visualização da assinatura")
         _apply_window_icon(self)
@@ -877,14 +983,16 @@ class PositionPreview(ctk.CTkToplevel):
         self.configure(fg_color=PREVIEW_BACKGROUND)
         self.transient(app)
 
-        toolbar = ctk.CTkFrame(self, height=54, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
+        toolbar = ctk.CTkFrame(self, height=94, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
         toolbar.pack(fill="x", padx=24, pady=(18, 10))
         toolbar.pack_propagate(False)
+        toolbar_top = ctk.CTkFrame(toolbar, fg_color="transparent")
+        toolbar_top.pack(fill="x", padx=12, pady=(5, 0))
         ctk.CTkLabel(
-            toolbar, text=f"Posição: {position}", font=ctk.CTkFont(size=13, weight="bold"), text_color=PRIMARY_TEXT
-        ).pack(side="left", padx=(14, 10), pady=8)
+            toolbar_top, text=f"Posição: {position}", font=ctk.CTkFont(size=13, weight="bold"), text_color=PRIMARY_TEXT
+        ).pack(side="left", padx=(2, 10), pady=8)
         navigation = ctk.CTkFrame(toolbar, fg_color="transparent")
-        navigation.pack(side="left", padx=10, pady=8)
+        navigation.pack(anchor="w", padx=12, pady=(3, 6))
         self.previous_button = ctk.CTkButton(
             navigation, text="← Anterior", width=104, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
             text_color=PRIMARY_TEXT, command=self._previous,
@@ -896,7 +1004,21 @@ class PositionPreview(ctk.CTkToplevel):
         )
         self.next_button.pack(side="left", padx=(6, 0))
 
-        zoom_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
+        page_navigation = ctk.CTkFrame(toolbar_top, fg_color="transparent")
+        page_navigation.pack(side="left", padx=(10, 0), pady=8)
+        self.previous_page_button = ctk.CTkButton(
+            page_navigation, text="← Página", width=84, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._previous_page,
+        )
+        self.previous_page_button.pack(side="left")
+        ctk.CTkLabel(page_navigation, textvariable=self.page_label_var, text_color=SECONDARY_TEXT).pack(side="left", padx=7)
+        self.next_page_button = ctk.CTkButton(
+            page_navigation, text="Página →", width=84, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._next_page,
+        )
+        self.next_page_button.pack(side="left")
+
+        zoom_controls = ctk.CTkFrame(toolbar_top, fg_color="transparent")
         zoom_controls.pack(side="left", expand=True, pady=8)
         ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
         ctk.CTkButton(zoom_controls, text="−", width=34, height=32, command=lambda: self._change_zoom(-1)).pack(side="left")
@@ -904,7 +1026,7 @@ class PositionPreview(ctk.CTkToplevel):
         self.zoom_label.pack(side="left", padx=6)
         ctk.CTkButton(zoom_controls, text="+", width=34, height=32, command=lambda: self._change_zoom(1)).pack(side="left")
         ctk.CTkButton(
-            toolbar, text="Fechar", width=82, height=34, fg_color="transparent", text_color=PRIMARY_TEXT,
+            toolbar_top, text="Fechar", width=82, height=34, fg_color="transparent", text_color=PRIMARY_TEXT,
             border_width=1, border_color=PRIMARY_TEXT, command=self.destroy,
         ).pack(side="right", padx=12, pady=8)
 
@@ -916,9 +1038,6 @@ class PositionPreview(ctk.CTkToplevel):
         # definitivo. Renderiza novamente após o layout para centralizar a página.
         self.after_idle(self._render_current)
 
-    def _page_number(self, document: fitz.Document) -> int:
-        return 0 if self.app.pages_var.get() == "Primeira página" else document.page_count - 1
-
     def _render_current(self) -> None:
         pdf_path = self.pdfs[self.index]
         try:
@@ -926,7 +1045,11 @@ class PositionPreview(ctk.CTkToplevel):
             try:
                 if document.page_count == 0:
                     raise ValueError("PDF sem páginas")
-                page = document[self._page_number(document)]
+                page_count = document.page_count
+                self.page_numbers = self.app._selected_page_numbers(page_count)
+                self.page_index = min(self.page_index, len(self.page_numbers) - 1)
+                page_number = self.page_numbers[self.page_index]
+                page = document[page_number]
                 page_rect = page.rect
                 scale = min(1.8, 900 / page_rect.width, 630 / page_rect.height) * self.zoom_factor
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
@@ -950,19 +1073,33 @@ class PositionPreview(ctk.CTkToplevel):
             y = offset_y + (rect.y0 - page_rect.y0) * scale
             self.canvas.create_image(x, y, image=self.signature_image, anchor="nw")
             self.canvas.create_rectangle(x, y, x + preview.width, y + preview.height, outline="#00A650", width=2)
+            self.page_label_var.set(f"Página {page_number + 1} de {page_count}")
         except Exception as error:
             self.canvas.delete("all")
             _center_pdf_content(self.canvas, 620, 260)
             self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
+            self.page_label_var.set("Página indisponível")
         self.previous_button.configure(state="normal" if self.index else "disabled")
         self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+        self.previous_page_button.configure(state="normal" if self.page_index else "disabled")
+        self.next_page_button.configure(state="normal" if self.page_index < len(self.page_numbers) - 1 else "disabled")
 
     def _previous(self) -> None:
         self.index -= 1
+        self.page_index = 0
         self._render_current()
 
     def _next(self) -> None:
         self.index += 1
+        self.page_index = 0
+        self._render_current()
+
+    def _previous_page(self) -> None:
+        self.page_index -= 1
+        self._render_current()
+
+    def _next_page(self) -> None:
+        self.page_index += 1
         self._render_current()
 
     def _change_zoom(self, direction: int) -> None:
@@ -988,6 +1125,8 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.current_width_mm = width_mm
         self.margin = margin_mm * MM_TO_POINTS
         self.index = 0
+        self.page_index = 0
+        self.page_numbers: list[int] = []
         self.page_rect: fitz.Rect | None = None
         self.scale = 1.0
         self.zoom_factor = 1.0
@@ -1007,6 +1146,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.grab_set()
 
         self.document_var = ctk.StringVar()
+        self.page_label_var = ctk.StringVar(value="Página")
         self.instruction_var = ctk.StringVar()
 
         size_row = ctk.CTkFrame(self, fg_color="transparent")
@@ -1017,11 +1157,13 @@ class ManualPositionEditor(ctk.CTkToplevel):
         )
         self.size_slider.pack(fill="x", padx=125, pady=(3, 5))
 
-        toolbar = ctk.CTkFrame(self, height=54, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
+        toolbar = ctk.CTkFrame(self, height=94, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
         toolbar.pack(fill="x", padx=24, pady=(5, 8))
         toolbar.pack_propagate(False)
+        toolbar_top = ctk.CTkFrame(toolbar, fg_color="transparent")
+        toolbar_top.pack(fill="x", padx=12, pady=(5, 0))
         self.shared_checkbox = ctk.CTkCheckBox(
-            toolbar,
+            toolbar_top,
             text="Usar a mesma posição e tamanho em todos os PDFs",
             variable=self.app.shared_manual_var,
             command=self._toggle_shared_mode,
@@ -1029,7 +1171,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         )
         self.shared_checkbox.pack(side="left", padx=12, pady=8)
         self.navigation_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
-        self.navigation_controls.pack(side="left", padx=(2, 8), pady=8)
+        self.navigation_controls.pack(anchor="w", padx=12, pady=(3, 6))
         self.previous_button = ctk.CTkButton(
             self.navigation_controls, text="← Anterior", width=96, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
             text_color=PRIMARY_TEXT, command=self._previous,
@@ -1043,7 +1185,21 @@ class ManualPositionEditor(ctk.CTkToplevel):
             hover_color="#008A42", command=self._save,
         )
 
-        zoom_controls = ctk.CTkFrame(toolbar, fg_color="transparent")
+        self.page_navigation = ctk.CTkFrame(toolbar_top, fg_color="transparent")
+        self.page_navigation.pack(side="left", padx=(0, 8), pady=8)
+        self.previous_page_button = ctk.CTkButton(
+            self.page_navigation, text="← Página", width=84, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._previous_page,
+        )
+        self.previous_page_button.pack(side="left")
+        ctk.CTkLabel(self.page_navigation, textvariable=self.page_label_var, text_color=SECONDARY_TEXT).pack(side="left", padx=7)
+        self.next_page_button = ctk.CTkButton(
+            self.page_navigation, text="Página →", width=84, height=34, fg_color="#E4EEFF", hover_color="#CEDFFC",
+            text_color=PRIMARY_TEXT, command=self._next_page,
+        )
+        self.next_page_button.pack(side="left")
+
+        zoom_controls = ctk.CTkFrame(toolbar_top, fg_color="transparent")
         zoom_controls.pack(side="right", padx=12, pady=8)
         ctk.CTkLabel(zoom_controls, text="Zoom:", text_color=PRIMARY_TEXT).pack(side="left", padx=(0, 8))
         ctk.CTkButton(zoom_controls, text="−", width=34, height=32, command=lambda: self._change_zoom(-1)).pack(side="left")
@@ -1062,16 +1218,9 @@ class ManualPositionEditor(ctk.CTkToplevel):
         # Garante a centralização já na abertura, sem exigir alteração de zoom.
         self.after_idle(self._render_current)
 
-    def _page_number(self, document: fitz.Document) -> int:
-        if self.app.pages_var.get() == "Primeira página":
-            return 0
-        # Em "Todas as páginas", a posição escolhida é reaproveitada em todas elas.
-        return document.page_count - 1
-
     def _render_current(self) -> None:
         pdf_path = self.pdfs[self.index]
         label = "Prévia de referência" if self.shared else f"Documento {self.index + 1} de {len(self.pdfs)}"
-        self.document_var.set(f"{label}: {pdf_path.name}")
         self.current_width_mm = self._get_width(pdf_path)
         self.size_slider.set(min(250, max(10, self.current_width_mm)))
         try:
@@ -1079,7 +1228,11 @@ class ManualPositionEditor(ctk.CTkToplevel):
             try:
                 if document.page_count == 0:
                     raise ValueError("PDF sem páginas")
-                page = document[self._page_number(document)]
+                page_count = document.page_count
+                self.page_numbers = self.app._selected_page_numbers(page_count)
+                self.page_index = min(self.page_index, len(self.page_numbers) - 1)
+                page_number = self.page_numbers[self.page_index]
+                page = document[page_number]
                 self.page_rect = page.rect
                 self.scale = min(1.8, 900 / page.rect.width, 610 / page.rect.height) * self.zoom_factor
                 pixmap = page.get_pixmap(matrix=fitz.Matrix(self.scale, self.scale), alpha=False)
@@ -1093,14 +1246,20 @@ class ManualPositionEditor(ctk.CTkToplevel):
             self._draw_signature()
             configured = self._get_position(pdf_path) is not None
             self.instruction_var.set("Posição definida — clique para ajustar." if configured else "Posição pendente — clique sobre a prévia.")
+            self.document_var.set(f"{label}: {pdf_path.name} — Página {page_number + 1} de {page_count}")
+            self.page_label_var.set(f"Página {page_number + 1} de {page_count}")
         except Exception as error:
             self.canvas.delete("all")
             self.canvas_offset_x, self.canvas_offset_y = _center_pdf_content(self.canvas, 620, 260)
             self.canvas.create_text(310, 130, text=f"Não foi possível abrir este PDF:\n{error}", fill="#A32020", justify="center")
             self.instruction_var.set("Escolha outro documento ou corrija o PDF antes de continuar.")
+            self.document_var.set(f"{label}: {pdf_path.name}")
+            self.page_label_var.set("Página indisponível")
         if not self.shared:
             self.previous_button.configure(state="normal" if self.index else "disabled")
             self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
+        self.previous_page_button.configure(state="normal" if self.page_index else "disabled")
+        self.next_page_button.configure(state="normal" if self.page_index < len(self.page_numbers) - 1 else "disabled")
 
     def _sync_shared_controls(self) -> None:
         self.previous_button.pack_forget()
@@ -1126,6 +1285,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.shared = shared
         self.pdfs = self.all_pdfs[:1] if shared else self.all_pdfs
         self.index = 0
+        self.page_index = 0
         self._sync_shared_controls()
         self._render_current()
 
@@ -1195,10 +1355,20 @@ class ManualPositionEditor(ctk.CTkToplevel):
 
     def _previous(self) -> None:
         self.index -= 1
+        self.page_index = 0
         self._render_current()
 
     def _next(self) -> None:
         self.index += 1
+        self.page_index = 0
+        self._render_current()
+
+    def _previous_page(self) -> None:
+        self.page_index -= 1
+        self._render_current()
+
+    def _next_page(self) -> None:
+        self.page_index += 1
         self._render_current()
 
     def _change_zoom(self, direction: int) -> None:

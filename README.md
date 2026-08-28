@@ -76,7 +76,7 @@ atualização e fecha para concluir a instalação.
 
 Para publicar uma atualização, altere `APP_VERSION` em `app.py` e
 `MyAppVersion` em `installer.iss`, gere `AssinaPDF-Setup.exe` no Windows e
-publique uma GitHub Release com a tag `v1.1.5`. Anexe ao Release
+publique uma GitHub Release com a tag `v1.1.6`. Anexe ao Release
 o arquivo com o nome exato `AssinaPDF-Setup.exe`.
 
 ## Executar pelo código-fonte no Windows
@@ -99,14 +99,17 @@ python app.py
 3. Escolha uma **Posição padrão** e clique em **Pré-visualizar posição padrão**
    para conferir o resultado antes de assinar. Essa é a opção mais simples e
    aplica o mesmo canto a todo o lote.
-4. Somente se necessário, ative **Quero ajustar a posição manualmente**.
-   Na janela de ajuste, mantenha marcada a opção **Usar a mesma posição e
+4. Em **Aplicar em**, escolha a primeira, a última, todas ou um **Intervalo
+   personalizado**. Para o intervalo, informe páginas como `1-3, 5, 8-10`.
+5. Somente se necessário, ative **Quero ajustar a posição manualmente**.
+   Na janela de ajuste, use os controles **← Página** e **Página →** para
+   visualizar as páginas selecionadas. Marque a opção **Usar a mesma posição e
    tamanho em todos os PDFs** para definir uma única escolha para o lote
    inteiro. Desmarque-a apenas se os documentos realmente precisarem de
    ajustes diferentes; os botões **Anterior** e **Próximo** serão exibidos.
-5. Na prévia manual, clique no local desejado e ajuste o controle de tamanho.
+6. Na prévia manual, clique no local desejado e ajuste o controle de tamanho.
    Os controles ficam acima da página e a visualização é centralizada.
-6. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
+7. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
 
 Os documentos originais não são alterados: as versões assinadas ficam na pasta
 `pdfs_assinados`, ao lado dos PDFs, ou na pasta de saída escolhida.
