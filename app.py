@@ -144,6 +144,8 @@ class AssinadorPMI(ctk.CTk):
         self.shared_manual_var = ctk.BooleanVar(value=False)
         self.pages_var = ctk.StringVar(value="Última página")
         self.custom_pages_var = ctk.StringVar(value="")
+        self.manual_pages_var = ctk.StringVar(value="Última página")
+        self.manual_custom_pages_var = ctk.StringVar(value="")
         self.width_var = ctk.StringVar(value="45")
         self.margin_var = ctk.StringVar(value="12")
         self.status_var = ctk.StringVar(value="Pronto para selecionar documentos.")
@@ -209,6 +211,12 @@ class AssinadorPMI(ctk.CTk):
         custom_pages = settings.get("custom_pages")
         if isinstance(custom_pages, str):
             self.custom_pages_var.set(custom_pages)
+        manual_pages = settings.get("manual_pages")
+        if manual_pages in {"Última página", "Primeira página", "Todas as páginas", "Intervalo personalizado"}:
+            self.manual_pages_var.set(manual_pages)
+        manual_custom_pages = settings.get("manual_custom_pages")
+        if isinstance(manual_custom_pages, str):
+            self.manual_custom_pages_var.set(manual_custom_pages)
 
         for key, variable, minimum in (("width_mm", self.width_var, 0.01), ("margin_mm", self.margin_var, 0.0)):
             try:
@@ -237,6 +245,8 @@ class AssinadorPMI(ctk.CTk):
             "position": self.position_var.get(),
             "pages": self.pages_var.get(),
             "custom_pages": self.custom_pages_var.get(),
+            "manual_pages": self.manual_pages_var.get(),
+            "manual_custom_pages": self.manual_custom_pages_var.get(),
             "width_mm": self.width_var.get(),
             "margin_mm": self.margin_var.get(),
             "signature_path": str(self.signature_path) if self.signature_path else None,
@@ -561,7 +571,8 @@ class AssinadorPMI(ctk.CTk):
         if not self.signature_path or not self.signature_path.exists():
             messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura válida.")
             return
-        if not self._validate_pages_for_selected_pdfs():
+        manual_mode = self.manual_enabled_var.get()
+        if not self._validate_pages_for_selected_pdfs(manual=manual_mode):
             return
         dimensions = self._read_dimensions()
         if dimensions is None:
@@ -569,7 +580,6 @@ class AssinadorPMI(ctk.CTk):
         width_mm, margin_mm = dimensions
         self._save_settings()
 
-        manual_mode = self.manual_enabled_var.get()
         if manual_mode:
             if self._is_shared_manual_mode():
                 missing = [] if self.shared_manual_position is not None else self.pdfs
@@ -601,7 +611,9 @@ class AssinadorPMI(ctk.CTk):
         self.status_var.set("Processando documentos...")
         config = (
             list(self.pdfs), self.signature_path, output, width_mm, margin_mm,
-            "Manual por PDF" if manual_mode else self.position_var.get(), self.pages_var.get(), self.custom_pages_var.get(),
+            "Manual por PDF" if manual_mode else self.position_var.get(),
+            self.manual_pages_var.get() if manual_mode else self.pages_var.get(),
+            self.manual_custom_pages_var.get() if manual_mode else self.custom_pages_var.get(),
             manual_positions, manual_widths,
         )
         threading.Thread(target=self._sign_batch, args=config, daemon=True).start()
@@ -619,7 +631,14 @@ class AssinadorPMI(ctk.CTk):
 
     def _selected_page_numbers(self, page_count: int) -> list[int]:
         """Converte a escolha do usuário em índices de página do PDF."""
-        selection = self.pages_var.get()
+        return self._page_numbers_for_selection(self.pages_var.get(), self.custom_pages_var.get(), page_count)
+
+    def _manual_selected_page_numbers(self, page_count: int) -> list[int]:
+        """Converte a escolha independente do ajuste manual em páginas do PDF."""
+        return self._page_numbers_for_selection(self.manual_pages_var.get(), self.manual_custom_pages_var.get(), page_count)
+
+    @staticmethod
+    def _page_numbers_for_selection(selection: str, custom_pages: str, page_count: int) -> list[int]:
         if selection == "Primeira página":
             return [0]
         if selection == "Última página":
@@ -627,7 +646,7 @@ class AssinadorPMI(ctk.CTk):
         if selection == "Todas as páginas":
             return list(range(page_count))
 
-        return self._parse_custom_page_numbers(self.custom_pages_var.get(), page_count)
+        return AssinadorPMI._parse_custom_page_numbers(custom_pages, page_count)
 
     @staticmethod
     def _parse_custom_page_numbers(specification: str, page_count: int) -> list[int]:
@@ -650,7 +669,7 @@ class AssinadorPMI(ctk.CTk):
             pages.update(range(start - 1, end))
         return sorted(pages)
 
-    def _validate_pages_for_selected_pdfs(self) -> bool:
+    def _validate_pages_for_selected_pdfs(self, manual: bool = False) -> bool:
         """Garante que a seleção de páginas existe em todos os PDFs do lote."""
         try:
             for pdf_path in self.pdfs:
@@ -658,7 +677,8 @@ class AssinadorPMI(ctk.CTk):
                     if document.page_count == 0:
                         raise ValueError(f"{pdf_path.name} não possui páginas.")
                     try:
-                        self._selected_page_numbers(document.page_count)
+                        page_numbers = self._manual_selected_page_numbers if manual else self._selected_page_numbers
+                        page_numbers(document.page_count)
                     except ValueError as error:
                         raise ValueError(f"{pdf_path.name}: {error}") from error
         except (OSError, RuntimeError, ValueError) as error:
@@ -673,7 +693,7 @@ class AssinadorPMI(ctk.CTk):
         if not self.signature_path or not self.signature_path.exists():
             messagebox.showwarning("Assinatura", "Selecione uma imagem de assinatura antes de definir as posições.")
             return
-        if not self._validate_pages_for_selected_pdfs():
+        if not self._validate_pages_for_selected_pdfs(manual=True):
             return
         dimensions = self._read_dimensions()
         if dimensions is None:
@@ -1157,6 +1177,52 @@ class ManualPositionEditor(ctk.CTkToplevel):
         )
         self.size_slider.pack(fill="x", padx=125, pady=(3, 5))
 
+        manual_pages_frame = ctk.CTkFrame(
+            self, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER
+        )
+        manual_pages_frame.pack(fill="x", padx=24, pady=(5, 4))
+        manual_pages_top = ctk.CTkFrame(manual_pages_frame, fg_color="transparent")
+        manual_pages_top.pack(fill="x", padx=14, pady=(9, 5))
+        ctk.CTkLabel(
+            manual_pages_top,
+            text="Páginas para assinatura manual",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            text_color=PRIMARY_TEXT,
+        ).pack(side="left")
+        self.manual_pages_menu = ctk.CTkOptionMenu(
+            manual_pages_top,
+            values=["Última página", "Primeira página", "Todas as páginas", "Intervalo personalizado"],
+            variable=self.app.manual_pages_var,
+            command=self._change_manual_page_selection,
+            width=205,
+        )
+        self.manual_pages_menu.pack(side="right")
+        ctk.CTkLabel(
+            manual_pages_frame,
+            text="Esta escolha é exclusiva do modo manual e não altera a posição padrão.",
+            text_color=SECONDARY_TEXT,
+            font=ctk.CTkFont(size=11),
+        ).pack(anchor="w", padx=14, pady=(0, 7))
+        self.manual_custom_pages_holder = ctk.CTkFrame(manual_pages_frame, fg_color="transparent")
+        ctk.CTkLabel(
+            self.manual_custom_pages_holder,
+            text="Páginas ou intervalos (ex.: 1-3, 5)",
+            text_color=SECONDARY_TEXT,
+            font=ctk.CTkFont(size=12, weight="bold"),
+        ).pack(side="left")
+        ctk.CTkEntry(
+            self.manual_custom_pages_holder,
+            textvariable=self.app.manual_custom_pages_var,
+            placeholder_text="Ex.: 1-3, 5",
+            width=190,
+        ).pack(side="left", padx=10)
+        ctk.CTkButton(
+            self.manual_custom_pages_holder,
+            text="Atualizar páginas",
+            width=132,
+            command=self._apply_manual_page_selection,
+        ).pack(side="left")
+
         toolbar = ctk.CTkFrame(self, height=94, corner_radius=10, fg_color=CARD_BACKGROUND, border_width=1, border_color=CARD_BORDER)
         toolbar.pack(fill="x", padx=24, pady=(5, 8))
         toolbar.pack_propagate(False)
@@ -1214,6 +1280,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.canvas.bind("<Button-1>", self._choose_position)
 
         self._sync_shared_controls()
+        self._toggle_manual_custom_pages()
         self._render_current()
         # Garante a centralização já na abertura, sem exigir alteração de zoom.
         self.after_idle(self._render_current)
@@ -1229,7 +1296,7 @@ class ManualPositionEditor(ctk.CTkToplevel):
                 if document.page_count == 0:
                     raise ValueError("PDF sem páginas")
                 page_count = document.page_count
-                self.page_numbers = self.app._selected_page_numbers(page_count)
+                self.page_numbers = self.app._manual_selected_page_numbers(page_count)
                 self.page_index = min(self.page_index, len(self.page_numbers) - 1)
                 page_number = self.page_numbers[self.page_index]
                 page = document[page_number]
@@ -1260,6 +1327,23 @@ class ManualPositionEditor(ctk.CTkToplevel):
             self.next_button.configure(state="normal" if self.index < len(self.pdfs) - 1 else "disabled")
         self.previous_page_button.configure(state="normal" if self.page_index else "disabled")
         self.next_page_button.configure(state="normal" if self.page_index < len(self.page_numbers) - 1 else "disabled")
+
+    def _change_manual_page_selection(self, _value: str) -> None:
+        self._toggle_manual_custom_pages()
+        if self.app.manual_pages_var.get() != "Intervalo personalizado":
+            self._apply_manual_page_selection()
+
+    def _toggle_manual_custom_pages(self) -> None:
+        if self.app.manual_pages_var.get() == "Intervalo personalizado":
+            self.manual_custom_pages_holder.pack(fill="x", padx=14, pady=(0, 10))
+        else:
+            self.manual_custom_pages_holder.pack_forget()
+
+    def _apply_manual_page_selection(self) -> None:
+        if not self.app._validate_pages_for_selected_pdfs(manual=True):
+            return
+        self.page_index = 0
+        self._render_current()
 
     def _sync_shared_controls(self) -> None:
         self.previous_button.pack_forget()

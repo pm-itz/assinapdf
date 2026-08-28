@@ -102,8 +102,10 @@ python app.py
 4. Em **Aplicar em**, escolha a primeira, a última, todas ou um **Intervalo
    personalizado**. Para o intervalo, informe páginas como `1-3, 5, 8-10`.
 5. Somente se necessário, ative **Quero ajustar a posição manualmente**.
-   Na janela de ajuste, use os controles **← Página** e **Página →** para
-   visualizar as páginas selecionadas. Marque a opção **Usar a mesma posição e
+   Na janela de ajuste, escolha as **Páginas para assinatura manual**. Essa
+   seleção é independente da posição padrão e também aceita um intervalo como
+   `1-3, 5`. Use os controles **← Página** e **Página →** para visualizar as
+   páginas escolhidas. Marque a opção **Usar a mesma posição e
    tamanho em todos os PDFs** para definir uma única escolha para o lote
    inteiro. Desmarque-a apenas se os documentos realmente precisarem de
    ajustes diferentes; os botões **Anterior** e **Próximo** serão exibidos.
