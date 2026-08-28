@@ -428,7 +428,7 @@ class AssinadorPMI(ctk.CTk):
         self.custom_pages_holder.grid(row=1, column=0, columnspan=2, sticky="ew", pady=6)
         ctk.CTkLabel(
             self.custom_pages_holder,
-            text="Páginas selecionadas",
+            text="Páginas ou intervalos (ex.: 1-3, 5, 8-10)",
             font=ctk.CTkFont(size=12, weight="bold"),
             text_color=SECONDARY_TEXT,
         ).pack(anchor="w")
@@ -436,7 +436,7 @@ class AssinadorPMI(ctk.CTk):
             self.custom_pages_holder,
             textvariable=self.custom_pages_var,
             height=33,
-            placeholder_text="Digite as páginas desejadas",
+            placeholder_text="Ex.: 1-3, 5",
         ).pack(fill="x", pady=(4, 0))
         self._entry_field(fields, "Largura (mm)", self.width_var, 2, 0)
         self._entry_field(fields, "Margem (mm)", self.margin_var, 2, 1)
@@ -1206,14 +1206,14 @@ class ManualPositionEditor(ctk.CTkToplevel):
         self.manual_custom_pages_holder = ctk.CTkFrame(manual_pages_frame, fg_color="transparent")
         ctk.CTkLabel(
             self.manual_custom_pages_holder,
-            text="Páginas para visualizar e assinar",
+            text="Páginas para visualizar e assinar (ex.: 1-3, 5)",
             text_color=SECONDARY_TEXT,
             font=ctk.CTkFont(size=12, weight="bold"),
         ).pack(side="left")
         ctk.CTkEntry(
             self.manual_custom_pages_holder,
             textvariable=self.app.manual_custom_pages_var,
-            placeholder_text="Digite as páginas desejadas",
+            placeholder_text="Ex.: 1-3, 5",
             width=190,
         ).pack(side="left", padx=10)
         ctk.CTkButton(
