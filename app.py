@@ -144,7 +144,7 @@ class AssinadorPMI(ctk.CTk):
         self.shared_manual_var = ctk.BooleanVar(value=False)
         self.pages_var = ctk.StringVar(value="Última página")
         self.custom_pages_var = ctk.StringVar(value="")
-        self.manual_pages_var = ctk.StringVar(value="Última página")
+        self.manual_pages_var = ctk.StringVar(value="Todas as páginas")
         self.manual_custom_pages_var = ctk.StringVar(value="")
         self.width_var = ctk.StringVar(value="45")
         self.margin_var = ctk.StringVar(value="12")
@@ -212,7 +212,9 @@ class AssinadorPMI(ctk.CTk):
         if isinstance(custom_pages, str):
             self.custom_pages_var.set(custom_pages)
         manual_pages = settings.get("manual_pages")
-        if manual_pages in {"Última página", "Primeira página", "Todas as páginas", "Intervalo personalizado"}:
+        # "Última página" era o padrão antigo; não o restauramos para que
+        # instalações atualizadas adotem o novo padrão de todas as páginas.
+        if manual_pages in {"Primeira página", "Todas as páginas", "Intervalo personalizado"}:
             self.manual_pages_var.set(manual_pages)
         manual_custom_pages = settings.get("manual_custom_pages")
         if isinstance(manual_custom_pages, str):
