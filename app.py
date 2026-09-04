@@ -635,6 +635,10 @@ class AssinadorPMI(ctk.CTk):
 
     def _manual_selected_page_numbers(self, page_count: int) -> list[int]:
         """Converte a escolha independente do ajuste manual em páginas do PDF."""
+        # Um PDF de página única sempre pode ser ajustado manualmente, mesmo
+        # quando uma seleção anterior de intervalo menciona outras páginas.
+        if page_count == 1:
+            return [0]
         return self._page_numbers_for_selection(self.manual_pages_var.get(), self.manual_custom_pages_var.get(), page_count)
 
     @staticmethod
@@ -769,7 +773,9 @@ class AssinadorPMI(ctk.CTk):
         try:
             if document.page_count == 0:
                 raise ValueError("PDF sem páginas")
-            if pages == "Intervalo personalizado":
+            if position == "Manual por PDF" and document.page_count == 1:
+                page_numbers = [0]
+            elif pages == "Intervalo personalizado":
                 page_numbers = AssinadorPMI._parse_custom_page_numbers(custom_pages, document.page_count)
             else:
                 page_numbers = {
