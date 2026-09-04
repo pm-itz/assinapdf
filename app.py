@@ -412,7 +412,7 @@ class AssinadorPMI(ctk.CTk):
         fields.grid_columnconfigure(0, weight=1)
         fields.grid_columnconfigure(1, weight=1)
 
-        self._option_field(fields, "Posição padrão", self.position_var, [
+        self.position_option = self._option_field(fields, "Posição padrão", self.position_var, [
             "Inferior direita", "Inferior esquerda", "Superior direita", "Superior esquerda", "Centro"
         ], 0, 0)
         self.pages_option = self._option_field(
@@ -503,7 +503,7 @@ class AssinadorPMI(ctk.CTk):
         ctk.CTkEntry(holder, textvariable=variable, height=33).pack(fill="x", pady=(4, 0))
 
     def _toggle_custom_page_field(self, _value: str | None = None) -> None:
-        if self.pages_var.get() == "Intervalo personalizado":
+        if not self.manual_enabled_var.get() and self.pages_var.get() == "Intervalo personalizado":
             self.custom_pages_holder.grid()
         else:
             self.custom_pages_holder.grid_remove()
@@ -556,8 +556,15 @@ class AssinadorPMI(ctk.CTk):
     def _toggle_manual_controls(self) -> None:
         if self.manual_enabled_var.get():
             self.manual_controls.pack(fill="x", padx=12, pady=(0, 10))
+            # A posição e o intervalo padrão não são usados no ajuste manual.
+            self.position_option.configure(state="disabled")
+            self.pages_option.configure(state="disabled")
+            self.custom_pages_holder.grid_remove()
         else:
             self.manual_controls.pack_forget()
+            self.position_option.configure(state="normal")
+            self.pages_option.configure(state="normal")
+            self._toggle_custom_page_field()
 
     def _is_shared_manual_mode(self) -> bool:
         return self.shared_manual_var.get()
@@ -635,10 +642,18 @@ class AssinadorPMI(ctk.CTk):
 
     def _manual_selected_page_numbers(self, page_count: int) -> list[int]:
         """Converte a escolha independente do ajuste manual em páginas do PDF."""
-        return self._page_numbers_for_selection(self.manual_pages_var.get(), self.manual_custom_pages_var.get(), page_count)
+        return self._page_numbers_for_selection(
+            self.manual_pages_var.get(), self.manual_custom_pages_var.get(), page_count, single_page_fallback=True
+        )
 
     @staticmethod
-    def _page_numbers_for_selection(selection: str, custom_pages: str, page_count: int) -> list[int]:
+    def _page_numbers_for_selection(
+        selection: str, custom_pages: str, page_count: int, single_page_fallback: bool = False,
+    ) -> list[int]:
+        # No modo manual, um PDF de página única sempre pode ser ajustado:
+        # qualquer escolha de página corresponde à única página disponível.
+        if single_page_fallback and page_count == 1:
+            return [0]
         if selection == "Primeira página":
             return [0]
         if selection == "Última página":
@@ -769,14 +784,12 @@ class AssinadorPMI(ctk.CTk):
         try:
             if document.page_count == 0:
                 raise ValueError("PDF sem páginas")
-            if pages == "Intervalo personalizado":
-                page_numbers = AssinadorPMI._parse_custom_page_numbers(custom_pages, document.page_count)
-            else:
-                page_numbers = {
-                    "Última página": [document.page_count - 1],
-                    "Primeira página": [0],
-                    "Todas as páginas": list(range(document.page_count)),
-                }[pages]
+            page_numbers = AssinadorPMI._page_numbers_for_selection(
+                pages,
+                custom_pages,
+                document.page_count,
+                single_page_fallback=position == "Manual por PDF",
+            )
             for page_number in page_numbers:
                 page = document[page_number]
                 rectangle = AssinadorPMI._signature_rectangle(page.rect, width, height, margin, position, manual_position)

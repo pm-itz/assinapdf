@@ -109,6 +109,9 @@ python app.py
    tamanho em todos os PDFs** para definir uma única escolha para o lote
    inteiro. Desmarque-a apenas se os documentos realmente precisarem de
    ajustes diferentes; os botões **Anterior** e **Próximo** serão exibidos.
+   Em um PDF de uma única página, o modo manual usa automaticamente a página 1.
+   Enquanto esse modo estiver ativo, os controles de posição e intervalo padrão
+   ficam desativados para evitar escolhas conflitantes.
 6. Na prévia manual, clique no local desejado e ajuste o controle de tamanho.
    Os controles ficam acima da página e a visualização é centralizada.
 7. Escolha a pasta de saída, se necessário, e clique em **ASSINAR PDFs**.
